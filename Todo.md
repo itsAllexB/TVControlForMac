@@ -31,18 +31,11 @@ the system volume/brightness pop-up. Known gaps and leads:
 - [ ]  **Wake-on-LAN** end-to-end (needs the TV off; magic packets + retry loop are ported).
 - [ ]  **Power automation** live: off-on-sleep, off-on-shutdown, display-sleep follow
   (screen off / full off), wake-on-display-wake.
-- [ ]  **Launch at login** via `SMAppService.mainApp` (shows under System Settings →
-  Login Items → "Open at Login"): registration, the legacy-agent migration for installs
-  that used the pre-1.1 bundled launch agent, and the launch-behavior distinction now
-  detected from the `keyAELaunchedAsLogInItem` Apple event (needs a real log-in to verify).
+- [ ]  **Launch at login** (+ the `--autostart` launch-behavior distinction via the bundled
+  launch agent).
 - [ ]  **Schedules** firing at the minute + sleep-gap catch-up.
 - [ ]  **Drag-to-reorder** TV cards (SwiftUI `onMove` on macOS).
 - [ ]  **Import a real LGforWin backup** exported from the Windows app.
-- [ ]  **Linked-display automation gating** end-to-end: link a TV to its display, enable
-  "Automate only while connected", then unplug/replug HDMI and check that schedules and
-  power rules skip/resume, that a missed schedule applies on reconnect, and that
-  off-on-sleep → wake-on-resume still works when the Mac stays plugged in (wake rules
-  use the presence snapshot from the last awake period, since an off TV drops HDMI).
 
 ## Roadmap carried over from LGforWin's Todo.md (unshipped there too)
 
@@ -52,8 +45,7 @@ the system volume/brightness pop-up. Known gaps and leads:
 - [ ]  **Per-TV schedule targeting** — schedules currently apply to *all* TVs.
 - [ ]  Per-TV power rules (power automation applies to all TVs, like schedules).
 - [ ]  Surface TV power state in the menu bar icon/tooltip, not just the TV card.
-- [x]  "Identify screens" helper to make TV↔display pairing foolproof — the
-  "Identify displays" button on the TVs page (shown with 2+ displays).
+- [ ]  "Identify screens" helper to make TV↔display pairing foolproof.
 - [ ]  Optional per-TV dedicated hotkey combos (in addition to cursor targeting).
 
 ## Distribution & polish

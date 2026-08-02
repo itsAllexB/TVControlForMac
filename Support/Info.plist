@@ -22,6 +22,11 @@
 	<string>AppIcon</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- Start as an accessory (no Dock icon): the Dock icon is opted into dynamically
+	     while the main window is open, and dropped again when it closes — so running
+	     in the background looks like any other menu bar app. -->
+	<key>LSUIElement</key>
+	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>LSApplicationCategoryType</key>

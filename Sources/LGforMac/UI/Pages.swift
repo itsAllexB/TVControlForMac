@@ -335,15 +335,19 @@ struct SettingsView: View {
             subtitle: "Appearance, startup and backups."
         ) {
             GroupBox("Appearance") {
-                VStack(alignment: .leading, spacing: 12) {
-                    Picker("Theme", selection: $state.themeIndex) {
-                        Text("System").tag(0)
-                        Text("Light").tag(1)
-                        Text("Dark").tag(2)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: 320, alignment: .leading)
+                Picker("Theme", selection: $state.themeIndex) {
+                    Text("System").tag(0)
+                    Text("Light").tag(1)
+                    Text("Dark").tag(2)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 320, alignment: .leading)
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
+            GroupBox("Menu bar") {
+                VStack(alignment: .leading, spacing: 8) {
                     Toggle("Show the menu bar icon", isOn: Binding(
                         get: { state.showMenuBarIcon },
                         set: { on in
@@ -351,13 +355,14 @@ struct SettingsView: View {
                             if !on {
                                 dialogMessage = DialogMessage(
                                     title: "Menu bar icon hidden",
-                                    text: "LGforMac keeps running in the background. To open this window again, just launch LGforMac again — from the Dock, Launchpad or Spotlight.")
+                                    text: "LGforMac keeps running in the background. To open this window again, just launch LGforMac again — from Launchpad or Spotlight.")
                             }
                         }
                     ))
-                    Text("Without it, the app still runs and all automation keeps working. Launch LGforMac again to bring this window back.")
+                    Text("Closing this window keeps the app running with no Dock icon — like any menu bar app. Without the icon, everything still works in the background; launch LGforMac again to reopen this window.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(6)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -369,12 +374,13 @@ struct SettingsView: View {
                     Picker("When launched at login, open", selection: $state.launchBehavior) {
                         Text("Normal window").tag(0)
                         Text("Minimized").tag(1)
-                        Text("Menu bar only").tag(2)
+                        Text("Nothing — run in the background").tag(2)
                     }
                     .fixedSize()
-                    Text("Launching it yourself always opens the window.")
+                    Text(startupCaption)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(6)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -405,6 +411,16 @@ struct SettingsView: View {
         .alert(item: $dialogMessage) { message in
             Alert(title: Text(message.title), message: Text(message.text), dismissButton: .default(Text("OK")))
         }
+    }
+
+    // Spells out what the chosen launch combination actually does, so "run in the
+    // background" with the menu bar icon hidden reads as deliberate, not broken.
+    private var startupCaption: String {
+        let base = "Launching it yourself always opens the window."
+        guard state.launchBehavior == 2 else { return base }
+        return state.showMenuBarIcon
+            ? "At login it starts with no window and no Dock icon — reach it from its menu bar icon. " + base
+            : "At login it starts completely invisible (no window, no Dock icon, menu bar icon hidden) and automation runs in the background. " + base
     }
 
     private func exportBackup() {

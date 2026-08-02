@@ -62,7 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let behavior = AutostartService.isAutostartLaunch ? state.settings.launchBehavior : 0
         switch behavior {
         case 2:
-            break // menu bar only
+            break // in the background — stays an accessory (no window, no Dock icon)
         case 1:
             showMainWindow(activate: false)
             windowController?.window?.miniaturize(nil)
@@ -88,12 +88,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showMainWindow(activate: Bool = true) {
+        // The app runs as an accessory (LSUIElement, no Dock icon); opening the window
+        // is what promotes it to a regular app so it behaves normally while visible.
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
         if windowController == nil {
             windowController = MainWindowController()
         }
         windowController?.showWindow(nil)
         if activate {
-            NSApp.activate(ignoringOtherApps: true)
+            // After a policy switch, activation only sticks from the next runloop turn.
+            DispatchQueue.main.async {
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
     }
 }
@@ -118,9 +126,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
     }
 
-    // Close hides to the menu bar instead of quitting (parity with LGforWin's tray icon).
+    // Close hides to the background instead of quitting (parity with LGforWin's tray
+    // icon), and drops the Dock icon — a closed LGforMac is a plain menu bar app.
+    // Relaunching the app (or clicking the menu bar icon's "Open LGforMac") reopens it.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
+        NSApp.setActivationPolicy(.accessory)
         return false
     }
 }

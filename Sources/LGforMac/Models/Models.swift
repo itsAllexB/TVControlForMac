@@ -185,7 +185,8 @@ struct AppSettings: Codable {
     /// Same values as LGforWin's MOD_* mask. Default Control+Option (3).
     var hotkeyModifiers: Int = 3
     var startAtLogin: Bool = false
-    /// How the window opens on an autostart launch: 0 = normal, 1 = minimized, 2 = menu bar only.
+    /// How the window opens on an autostart launch: 0 = normal, 1 = minimized,
+    /// 2 = no window ("in the background"; the legacy LGforWin value meant "tray only").
     var launchBehavior: Int = 0
     /// Whether the menu bar icon is shown. The app keeps running without it — relaunching
     /// the app (Dock, Launchpad, Spotlight) is what brings the window back.

@@ -40,7 +40,10 @@ Full feature parity with LGforWin v2.1, plus a menu bar home:
 - **Power automation** — turn the TVs on/off with the Mac: at app start, on wake, on
   sleep, on shutdown/log-out, and following the display-sleep timer (blank the panel
   for instant resume, or power off fully). Waking uses Wake-on-LAN.
-- **Launch at login** (normal window / minimized / menu bar only).
+- **Launch at login** (normal window / minimized / in the background) via the standard
+  Login Items mechanism. Closing the window keeps the app running as a plain menu bar
+  app — no Dock icon until it's opened again — and the menu bar icon itself can be
+  hidden for a fully background setup.
 - **Import / export** all settings as one JSON file — **LGforWin backups import
   directly**, pairing keys included.
 - Light / dark / system theme; remembers TVs, their last brightness, window size.

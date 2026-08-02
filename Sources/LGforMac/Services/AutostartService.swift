@@ -4,7 +4,7 @@ import ServiceManagement
 /// Opt-in "launch at login" via `SMAppService.mainApp` — the standard mechanism, so the
 /// app appears under System Settings → General → Login Items → "Open at Login" like any
 /// other app. An at-login launch is detected from the Apple event macOS tags login-item
-/// launches with, so the launch-behavior preference (normal / minimized / menu bar only)
+/// launches with, so the launch-behavior preference (normal / minimized / background)
 /// still only applies to autostart launches.
 enum AutostartService {
     static let autostartArg = "--autostart"
