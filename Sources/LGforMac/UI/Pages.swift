@@ -335,13 +335,30 @@ struct SettingsView: View {
             subtitle: "Appearance, startup and backups."
         ) {
             GroupBox("Appearance") {
-                Picker("Theme", selection: $state.themeIndex) {
-                    Text("System").tag(0)
-                    Text("Light").tag(1)
-                    Text("Dark").tag(2)
+                VStack(alignment: .leading, spacing: 12) {
+                    Picker("Theme", selection: $state.themeIndex) {
+                        Text("System").tag(0)
+                        Text("Light").tag(1)
+                        Text("Dark").tag(2)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 320, alignment: .leading)
+
+                    Toggle("Show the menu bar icon", isOn: Binding(
+                        get: { state.showMenuBarIcon },
+                        set: { on in
+                            state.showMenuBarIcon = on
+                            if !on {
+                                dialogMessage = DialogMessage(
+                                    title: "Menu bar icon hidden",
+                                    text: "LGforMac keeps running in the background. To open this window again, just launch LGforMac again — from the Dock, Launchpad or Spotlight.")
+                            }
+                        }
+                    ))
+                    Text("Without it, the app still runs and all automation keeps working. Launch LGforMac again to bring this window back.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 320, alignment: .leading)
                 .padding(6)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

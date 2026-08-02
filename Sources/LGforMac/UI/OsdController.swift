@@ -57,14 +57,26 @@ final class OsdController {
              timeout: osd.timeoutSeconds)
     }
 
-    /// Shows the "no TV on this screen — pair your TVs" prompt on the cursor's screen,
+    /// Shows the "no TV on this screen — link your TVs" prompt on the cursor's screen,
     /// WITHOUT changing any brightness.
     func showUnpaired(osd: OsdSettings) {
+        showMessage(title: "No TV on this screen",
+                    subtitle: "Link each TV to its display on the TVs page.", osd: osd)
+    }
+
+    /// Shown when the only TV's automation gate blocked a hotkey because its linked
+    /// display isn't attached to this Mac.
+    func showDisconnected(osd: OsdSettings) {
+        showMessage(title: "TV isn't connected",
+                    subtitle: "Its linked display is unplugged, so hotkeys are paused.", osd: osd)
+    }
+
+    private func showMessage(title: String, subtitle: String, osd: OsdSettings) {
         guard let screen = ScreenService.screenAtCursor() ?? NSScreen.main else { return }
         model.mode = .message
         model.style = osd.style
-        model.title = "No TV on this screen"
-        model.subtitle = "Pair your TVs to their screens on the Home page."
+        model.title = title
+        model.subtitle = subtitle
         show(on: screen, style: osd.style, position: osd.position,
              size: NSSize(width: Self.msgWidth, height: Self.msgHeight),
              timeout: osd.timeoutSeconds)

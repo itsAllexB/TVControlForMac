@@ -12,6 +12,15 @@ final class TvDevice: Codable, Identifiable {
     var lastBacklight: Int = 80
     /// Stable id (display UUID) of the screen this TV drives, for cursor-targeted hotkeys and the OSD.
     var pairedScreenId: String = ""
+    /// Friendly name of the linked display, so the UI can name it while it's unplugged.
+    var pairedScreenName: String = ""
+    /// When true, automation (schedules, power rules, single-TV hotkeys) skips this TV
+    /// while its linked display isn't connected to this Mac.
+    var automationOnlyWhenConnected: Bool = false
+    /// Whether the linked display was present the last time the Mac was awake with its
+    /// displays on. A TV that's off drops its HDMI link entirely, so wake-time rules
+    /// can't trust a live check — they use this snapshot instead.
+    var lastDisplayConnected: Bool = true
     /// True once a secure wss://:3001 connection succeeded (2022+ models); tried first on reconnect.
     var secure: Bool = false
     /// MAC address learned via ARP while reachable, needed for Wake-on-LAN once the TV is off.
@@ -27,6 +36,9 @@ final class TvDevice: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case name = "Name", host = "Host", clientKey = "ClientKey"
         case lastBacklight = "LastBacklight", pairedScreenId = "PairedScreenId"
+        case pairedScreenName = "PairedScreenName"
+        case automationOnlyWhenConnected = "AutomationOnlyWhenConnected"
+        case lastDisplayConnected = "LastDisplayConnected"
         case secure = "Secure", macAddress = "MacAddress"
     }
 
@@ -37,6 +49,9 @@ final class TvDevice: Codable, Identifiable {
         clientKey = try c.decodeIfPresent(String.self, forKey: .clientKey) ?? ""
         lastBacklight = try c.decodeIfPresent(Int.self, forKey: .lastBacklight) ?? 80
         pairedScreenId = try c.decodeIfPresent(String.self, forKey: .pairedScreenId) ?? ""
+        pairedScreenName = try c.decodeIfPresent(String.self, forKey: .pairedScreenName) ?? ""
+        automationOnlyWhenConnected = try c.decodeIfPresent(Bool.self, forKey: .automationOnlyWhenConnected) ?? false
+        lastDisplayConnected = try c.decodeIfPresent(Bool.self, forKey: .lastDisplayConnected) ?? true
         secure = try c.decodeIfPresent(Bool.self, forKey: .secure) ?? false
         macAddress = try c.decodeIfPresent(String.self, forKey: .macAddress) ?? ""
     }
@@ -48,6 +63,9 @@ final class TvDevice: Codable, Identifiable {
         try c.encode(clientKey, forKey: .clientKey)
         try c.encode(lastBacklight, forKey: .lastBacklight)
         try c.encode(pairedScreenId, forKey: .pairedScreenId)
+        try c.encode(pairedScreenName, forKey: .pairedScreenName)
+        try c.encode(automationOnlyWhenConnected, forKey: .automationOnlyWhenConnected)
+        try c.encode(lastDisplayConnected, forKey: .lastDisplayConnected)
         try c.encode(secure, forKey: .secure)
         try c.encode(macAddress, forKey: .macAddress)
     }
@@ -169,6 +187,9 @@ struct AppSettings: Codable {
     var startAtLogin: Bool = false
     /// How the window opens on an autostart launch: 0 = normal, 1 = minimized, 2 = menu bar only.
     var launchBehavior: Int = 0
+    /// Whether the menu bar icon is shown. The app keeps running without it — relaunching
+    /// the app (Dock, Launchpad, Spotlight) is what brings the window back.
+    var showMenuBarIcon: Bool = true
     var themeIndex: Int = 0
     var schedules: [BrightnessSchedule] = []
     var applyScheduleOnStartup: Bool = false
@@ -178,6 +199,7 @@ struct AppSettings: Codable {
     enum CodingKeys: String, CodingKey {
         case hotkeyStep = "HotkeyStep", hotkeyModifiers = "HotkeyModifiers"
         case startAtLogin = "StartWithWindows", launchBehavior = "LaunchBehavior"
+        case showMenuBarIcon = "ShowMenuBarIcon"
         case themeIndex = "ThemeIndex", schedules = "Schedules"
         case applyScheduleOnStartup = "ApplyScheduleOnStartup"
         case osd = "Osd", power = "Power"
@@ -191,6 +213,7 @@ struct AppSettings: Codable {
         hotkeyModifiers = try c.decodeIfPresent(Int.self, forKey: .hotkeyModifiers) ?? 3
         startAtLogin = try c.decodeIfPresent(Bool.self, forKey: .startAtLogin) ?? false
         launchBehavior = try c.decodeIfPresent(Int.self, forKey: .launchBehavior) ?? 0
+        showMenuBarIcon = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIcon) ?? true
         themeIndex = try c.decodeIfPresent(Int.self, forKey: .themeIndex) ?? 0
         schedules = try c.decodeIfPresent([BrightnessSchedule].self, forKey: .schedules) ?? []
         applyScheduleOnStartup = try c.decodeIfPresent(Bool.self, forKey: .applyScheduleOnStartup) ?? false

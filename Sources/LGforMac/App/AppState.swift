@@ -3,10 +3,12 @@ import Network
 import Observation
 
 /// Outcome of a cursor-targeted brightness hotkey: a TV was adjusted, no paired TV was
-/// under the cursor (prompt to pair), or there are no TVs at all.
+/// under the cursor (prompt to pair), the only TV's linked display is unplugged and its
+/// automation gate is on, or there are no TVs at all.
 enum HotkeyOutcome {
     case adjusted(name: String, value: Int, screenId: String?)
     case unpaired
+    case disconnected
     case none
 }
 
@@ -121,7 +123,11 @@ final class AppState {
         scheduleService.onScheduleApplied = { [weak self] value in self?.showScheduleOsd(value) }
         scheduleService.start()
 
+        // Order matters: the on-app-start wake decision must read the persisted display
+        // presence from the previous session, BEFORE live tracking overwrites it (a TV
+        // that's off has no HDMI link, so a live sample would always say "absent").
         wirePowerAutomation()
+        startDisplayTracking()
 
         // Hidden test/debug hook: `--osd-preview` posts this distributed notification so
         // the OSD can be exercised without clicking through the UI.
@@ -132,34 +138,120 @@ final class AppState {
         }
     }
 
+    // MARK: - Display presence (linked-display automation gate)
+
+    // Presence is only trustworthy while the Mac is awake with its displays on: a TV we
+    // just turned off drops its HDMI link, and recording that "absence" during sleep or
+    // display-sleep would wrongly block the matching wake rule later.
+    @ObservationIgnored private var systemAwake = true
+    @ObservationIgnored private var displaysOn = true
+    @ObservationIgnored private var screenObserver: NSObjectProtocol?
+
+    private func startDisplayTracking() {
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in
+                AppState.shared.refreshScreens()
+                AppState.shared.updateDisplayPresence()
+            }
+        }
+        refreshScreens()
+        updateDisplayPresence()
+    }
+
+    /// Re-samples which linked displays are present and persists changes. No-op while
+    /// the Mac is asleep or its displays are off (see above). Applies a schedule that
+    /// was missed while a TV's display was unplugged as soon as it returns.
+    func updateDisplayPresence() {
+        guard systemAwake, displaysOn else { return }
+        var devicesChanged = false
+
+        for tv in tvs {
+            guard !tv.linkedScreenId.isEmpty else {
+                if !tv.displayConnected { tv.displayConnected = true } // unlinked TVs never gate
+                continue
+            }
+            let screen = screens.first { $0.id == tv.linkedScreenId }
+            let present = screen != nil
+
+            if let screen, tv.linkedScreenName != screen.name {
+                tv.refreshLinkName(screen.name)
+                devicesChanged = true
+            }
+            if tv.displayConnected != present {
+                tv.displayConnected = present
+                Log.write("\(tv.host): linked display \(present ? "connected" : "disconnected")")
+            }
+            if tv.device.lastDisplayConnected != present {
+                tv.device.lastDisplayConnected = present
+                devicesChanged = true
+            }
+            if present, tv.missedScheduleWhileDisconnected {
+                tv.missedScheduleWhileDisconnected = false
+                if let value = currentScheduledBrightness() {
+                    Log.write("\(tv.host): display is back — applying scheduled \(value)%")
+                    tv.applyBrightness(value)
+                }
+            }
+        }
+
+        if devicesChanged { persist() }
+    }
+
+    /// Links a TV to a display (or unlinks with an empty id) and re-samples presence.
+    func linkDisplay(_ tv: TvState, screenId: String) {
+        guard screenId != tv.linkedScreenId else { return }
+        let name = screens.first { $0.id == screenId }?.name ?? ""
+        tv.setLink(screenId: screenId, name: name)
+        persist()
+        updateDisplayPresence()
+    }
+
     // MARK: - Power automation (Power page rules)
 
     private func wirePowerAutomation() {
         // Sleep and shutdown give handlers only moments — send the off commands over the
         // already-open sockets and wait briefly, then let go.
         powerEvents.onSuspending = { [weak self] in
-            guard let self, self.settings.power.offOnSleep else { return }
+            guard let self else { return }
+            self.systemAwake = false // presence is frozen until the Mac is back
+            guard self.settings.power.offOnSleep else { return }
             self.turnOffAllBlocking(timeout: 1.5)
         }
         powerEvents.onSessionEnding = { [weak self] in
-            guard let self, self.settings.power.offOnShutdown else { return }
+            guard let self else { return }
+            self.systemAwake = false
+            guard self.settings.power.offOnShutdown else { return }
             self.turnOffAllBlocking(timeout: 2.0)
         }
         powerEvents.onResumed = { [weak self] in
-            guard let self, self.settings.power.onResume else { return }
-            self.powerOnAll()
+            guard let self else { return }
+            self.systemAwake = true
+            if self.settings.power.onResume {
+                self.powerOnAll() // decided from presence as of falling asleep
+            }
+            self.updateDisplayPresence()
         }
         powerEvents.onDisplayStateChanged = { [weak self] on in
             guard let self else { return }
             let power = self.settings.power
-            if !on && power.followDisplayOff {
-                if power.displayOffAction == 1 {
-                    self.turnOffAll()
-                } else {
-                    self.screenOffAll()
+            if !on {
+                self.displaysOn = false // freeze presence before the TVs power down
+                if power.followDisplayOff {
+                    if power.displayOffAction == 1 {
+                        self.turnOffAll()
+                    } else {
+                        self.screenOffAll()
+                    }
                 }
-            } else if on && power.followDisplayOn {
-                self.powerOnAll()
+            } else {
+                self.displaysOn = true
+                if power.followDisplayOn {
+                    self.powerOnAll() // before re-sampling — a woken TV isn't back on HDMI yet
+                }
+                self.refreshScreens()
+                self.updateDisplayPresence()
             }
         }
 
@@ -170,23 +262,33 @@ final class AppState {
         }
     }
 
+    /// The TVs automation may touch right now — skips any TV whose linked display is
+    /// required but not connected. Manual controls always target a TV directly instead.
+    private var automationTargets: [TvState] {
+        tvs.filter { tv in
+            if tv.automationAllowed { return true }
+            Log.write("\(tv.host): automation skipped — linked display not connected")
+            return false
+        }
+    }
+
     func turnOffAll() {
-        for tv in tvs { Task { await tv.turnOff() } }
+        for tv in automationTargets { Task { await tv.turnOff() } }
     }
 
     func screenOffAll() {
-        for tv in tvs { Task { await tv.screenOff() } }
+        for tv in automationTargets { Task { await tv.screenOff() } }
     }
 
     func powerOnAll() {
-        for tv in tvs { Task { await tv.powerOn() } }
+        for tv in automationTargets { Task { await tv.powerOn() } }
     }
 
     // Blocks the calling (main) thread briefly so the off commands make it onto the wire
     // before the system finishes sleeping / logging out — same trick as LGforWin's
     // TurnOffAllAsync().Wait(…). The sends themselves run off the main thread.
     private func turnOffAllBlocking(timeout: TimeInterval) {
-        let controllers = tvs.map(\.controller)
+        let controllers = automationTargets.map(\.controller)
         let semaphore = DispatchSemaphore(value: 0)
         Task.detached {
             await withTaskGroup(of: Void.self) { group in
@@ -244,7 +346,7 @@ final class AppState {
         let tv = TvState(device: device, persist: { [weak self] in self?.persist() },
                          startupBrightness: { [weak self] in
                              DispatchQueue.main.sync {
-                                 MainActor.assumeIsolated { self?.startupBrightness() }
+                                 MainActor.assumeIsolated { self?.startupBrightness(for: device) }
                              }
                          })
         tvs.append(tv)
@@ -269,6 +371,9 @@ final class AppState {
         let tv: TvState
         if tvs.count == 1 {
             tv = tvs[0] // only one TV → unambiguous, ignore the cursor
+            // …unless its automation gate says its display must be attached. (With
+            // several TVs the cursor must be ON the linked display, so no check needed.)
+            guard tv.automationAllowed else { return .disconnected }
         } else {
             guard let cursorScreen = ScreenService.screenIdAtCursor(),
                   let match = tvs.first(where: { $0.device.pairedScreenId == cursorScreen }) else {
@@ -290,6 +395,9 @@ final class AppState {
         case .unpaired:
             guard settings.osd.enabled else { return }
             osd.showUnpaired(osd: settings.osd)
+        case .disconnected:
+            guard settings.osd.enabled else { return }
+            osd.showDisconnected(osd: settings.osd)
         case .none:
             break
         }
@@ -297,9 +405,18 @@ final class AppState {
 
     // MARK: - Schedules
 
-    /// Sets every TV to the given brightness (used by schedules).
+    /// Sets every TV to the given brightness (used by schedules). A TV whose automation
+    /// is paused is skipped but remembers that it missed a schedule, so the in-effect
+    /// value is applied the moment its display reconnects.
     func applyBrightnessAll(_ value: Int) {
-        for tv in tvs { tv.applyBrightness(value) }
+        for tv in tvs {
+            if tv.automationAllowed {
+                tv.applyBrightness(value)
+            } else {
+                tv.missedScheduleWhileDisconnected = true
+                Log.write("\(tv.host): schedule held — linked display not connected")
+            }
+        }
     }
 
     /// The brightness that should currently be in effect per the schedules: the most recent
@@ -321,16 +438,25 @@ final class AppState {
         return inEffect.brightness
     }
 
-    // Catch-up value applied to a TV on its first connect (nil when disabled or no schedules).
-    private func startupBrightness() -> Int? {
-        settings.applyScheduleOnStartup ? currentScheduledBrightness() : nil
+    // Catch-up value applied to a TV on its first connect (nil when disabled or no
+    // schedules). A TV whose automation is paused holds the value for display-reconnect
+    // instead — its user isn't looking at it right now.
+    private func startupBrightness(for device: TvDevice) -> Int? {
+        guard settings.applyScheduleOnStartup, let value = currentScheduledBrightness() else { return nil }
+        if let tv = tvs.first(where: { $0.device === device }), !tv.automationAllowed {
+            tv.missedScheduleWhileDisconnected = true
+            Log.write("\(device.host): startup schedule held — linked display not connected")
+            return nil
+        }
+        return value
     }
 
     // Shows the OSD after a schedule applied brightness, if the user opted in. Schedules
     // affect all TVs, so it's one confirmation (falls back to the primary display), named
-    // only when there's a single TV.
+    // only when there's a single TV. Nothing to confirm when every TV was skipped.
     private func showScheduleOsd(_ value: Int) {
         guard settings.osd.enabled, settings.osd.showOnSchedule else { return }
+        guard tvs.contains(where: \.automationAllowed) else { return }
         let tv = activeTv
         osd.showBrightness(tvName: tvs.count == 1 ? tv?.name : nil, value: value, osd: settings.osd,
                            screenId: tv?.device.pairedScreenId, allowFallback: true)
@@ -374,6 +500,15 @@ final class AppState {
     var launchBehavior: Int {
         get { settings.launchBehavior }
         set { settings.launchBehavior = newValue; saveSettings() }
+    }
+
+    var showMenuBarIcon: Bool {
+        get { settings.showMenuBarIcon }
+        set {
+            guard newValue != settings.showMenuBarIcon else { return }
+            settings.showMenuBarIcon = newValue
+            saveSettings()
+        }
     }
 
     var hotkeyStep: Int {
@@ -480,6 +615,10 @@ final class AppState {
 
     /// Releases hotkeys, sockets and persists state before exit.
     func shutdown() {
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+            self.screenObserver = nil
+        }
         powerEvents.dispose()
         hotkeys.dispose()
         scheduleService.dispose()

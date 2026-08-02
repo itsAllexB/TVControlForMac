@@ -66,6 +66,12 @@ private struct MenuBarTvRow: View {
                 Text(tv.name)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
+                if tv.automationPaused {
+                    Image(systemName: "tv.slash")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .help("Automation paused — the linked display isn't connected")
+                }
                 Spacer()
                 Text("\(tv.backlight)%")
                     .font(.system(size: 12, weight: .medium, design: .rounded))

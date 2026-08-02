@@ -26,6 +26,53 @@ final class TvState: Identifiable {
     /// True when this is the TV selected on the Home page (the "Active" pill).
     var isActive = false
 
+    // MARK: - Linked display
+    // Observable mirrors of the device's link fields (TvDevice itself isn't observable).
+    // The device stays the source of truth for persistence and hotkey matching.
+
+    /// Stable id of the linked display ("" = not linked).
+    private(set) var linkedScreenId: String
+    /// Friendly name of the linked display, kept so it can be named while unplugged.
+    private(set) var linkedScreenName: String
+    /// Whether the linked display is present. Maintained by AppState only while the Mac
+    /// is awake with displays on (see TvDevice.lastDisplayConnected); true when unlinked.
+    var displayConnected: Bool
+    /// A schedule fired while automation was paused — applied when the display returns.
+    var missedScheduleWhileDisconnected = false
+
+    /// The per-TV "Automate only while connected" toggle.
+    var automationGate: Bool {
+        didSet {
+            guard automationGate != oldValue else { return }
+            device.automationOnlyWhenConnected = automationGate
+            persist()
+            AppState.shared.updateDisplayPresence()
+        }
+    }
+
+    /// False when automation (schedules, power rules, single-TV hotkeys) must skip this
+    /// TV because its linked display isn't connected. Manual controls ignore this.
+    var automationAllowed: Bool {
+        !automationGate || linkedScreenId.isEmpty || displayConnected
+    }
+
+    var automationPaused: Bool { !automationAllowed }
+
+    /// Points the link at a (new) display, or unlinks with empty values.
+    func setLink(screenId: String, name: String) {
+        linkedScreenId = screenId
+        linkedScreenName = name
+        device.pairedScreenId = screenId
+        device.pairedScreenName = name
+        missedScheduleWhileDisconnected = false
+    }
+
+    /// Keeps the stored display name current (displays can be renamed in System Settings).
+    func refreshLinkName(_ name: String) {
+        linkedScreenName = name
+        device.pairedScreenName = name
+    }
+
     var name: String { device.name }
     var host: String { device.host }
 
@@ -33,6 +80,12 @@ final class TvState: Identifiable {
         self.device = device
         self.persist = persist
         self.backlight = device.lastBacklight
+        self.linkedScreenId = device.pairedScreenId
+        self.linkedScreenName = device.pairedScreenName
+        self.automationGate = device.automationOnlyWhenConnected
+        // Seed presence from the persisted snapshot; live tracking corrects it once the
+        // displays are up. Unlinked TVs never gate, so they read as "connected".
+        self.displayConnected = device.pairedScreenId.isEmpty || device.lastDisplayConnected
 
         controller = TvController(device: device)
         controller.getStartupBrightness = startupBrightness

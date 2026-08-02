@@ -21,7 +21,13 @@ struct LGforMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        MenuBarExtra {
+        // isInserted honors the "Show the menu bar icon" setting; the getter runs inside
+        // SwiftUI's observation tracking, so toggling it inserts/removes the item live.
+        // The setter also covers macOS removing the item itself (⌘-drag off the bar).
+        MenuBarExtra(isInserted: Binding(
+            get: { AppState.shared.settings.showMenuBarIcon },
+            set: { AppState.shared.showMenuBarIcon = $0 }
+        )) {
             MenuBarView()
         } label: {
             Image(systemName: "sun.max.fill")

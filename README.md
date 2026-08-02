@@ -22,7 +22,14 @@ Full feature parity with LGforWin v2.1, plus a menu bar home:
   `ws://:3000`.
 - Per-TV **OLED Light slider (0–100)** that pushes changes live (debounced).
 - **Global hotkeys** (default ⌃⌥ + ↑/↓, customizable) that adjust the TV on the screen
-  your **cursor** is on — pair each TV to the display it drives. 1–25 points per press.
+  your **cursor** is on — link each TV to the display it drives. 1–25 points per press.
+- **Linked displays with an automation gate** — link each TV to the physical display it
+  drives (an "Identify displays" flash shows which is which). Turn on **"Automate only
+  while connected"** and schedules, power rules and single-TV hotkeys skip that TV
+  whenever its display isn't attached — so a MacBook that leaves the desk stops driving
+  the TV. Manual controls always work; wake rules use the presence remembered from when
+  the Mac was last awake (an off TV drops its HDMI link, so a live check can't be
+  trusted), and schedules missed while unplugged apply the moment the display returns.
 - **On-screen display** — two styles: a native **macOS pop-up** that drops in below the
   menu bar exactly like the system volume/brightness HUD — rendered in real **Liquid
   Glass** (`NSGlassEffectView`) on macOS 26+, frosted material on older systems — or the
