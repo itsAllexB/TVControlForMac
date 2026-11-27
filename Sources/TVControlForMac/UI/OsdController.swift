@@ -1,22 +1,25 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import AppKit
 import SwiftUI
 import Observation
 
-/// A small borderless, always-on-top OSD (like the system volume/brightness HUD) that
-/// briefly shows the brightness when it's changed via global hotkeys — a frosted pill
-/// that slides + fades in, anchored to a configurable corner of a configurable screen.
+/// Briefly shows the brightness after it's changed via global hotkeys, in one of two styles:
+/// 0 = a replica of the macOS volume/brightness HUD below the menu bar (`OsdSystemHud`),
+/// 1 = the TVControlForWin-style pill at one of six screen anchors.
+///
+/// Each style owns its own panel and view hierarchy, built once and never re-parented.
+/// The old single shared panel moved one hosting view in and out of a glass view when the
+/// style or mode changed, and NSGlassEffectView ignores being handed the content view it
+/// already references, so after any message or Windows-style OSD the macOS-style capsule
+/// came back empty for good.
 @MainActor
 final class OsdController {
-    // Metrics (points). "Win" is the TVControlForWin-style pill; "mac" mirrors the macOS 26
-    // volume/brightness pop-up (wide Liquid Glass capsule below the menu bar,
-    // top-trailing) — measured against the system HUD.
+    private let systemHud = OsdSystemHud()
+
+    // Windows-style pill metrics (points).
     private static let winWidth: CGFloat = 230
     private static let winHeight: CGFloat = 52          // icon + bar + value
     private static let winHeightWithName: CGFloat = 72  // + TV name line
-    private static let macWidth: CGFloat = 290
-    private static let macHeight: CGFloat = 46          // slider row only
-    private static let macHeightWithName: CGFloat = 70  // + device-name row
-    private static let macTopMargin: CGFloat = 11       // gap below the menu bar
     private static let msgWidth: CGFloat = 320          // the "no TV on this screen" prompt has text
     private static let msgHeight: CGFloat = 64
     private static let edgeMargin: CGFloat = 16
@@ -26,8 +29,6 @@ final class OsdController {
     private static let fadeOut: TimeInterval = 0.19
 
     private var panel: NSPanel?
-    private var hosting: NSHostingView<OsdView>?
-    private var glassView: NSView? // NSGlassEffectView on macOS 26+
     private let model = OsdModel()
     private var hideTimer: Timer?
 
@@ -35,6 +36,12 @@ final class OsdController {
     private var anchoredTop = false
     private var visible = false
     private var hiding = false
+    // Bumped on every show/hide of the pill; a fade completion acts only if it is current.
+    private var generation = 0
+
+    init() {
+        installTestHook()
+    }
 
     /// Shows (or refreshes) the brightness OSD per the settings.
     /// When the mode is "the adjusted TV's screen" and that screen isn't paired/connected,
@@ -45,41 +52,56 @@ final class OsdController {
                                          allowFallback: allowFallback) else { return }
 
         let showName = osd.showTvName && !(tvName ?? "").isEmpty
-        model.mode = .brightness
-        model.style = osd.style
-        model.value = max(0, min(100, value))
-        model.name = showName ? tvName : nil
+        let value = max(0, min(100, value))
+        if osd.style == 0 {
+            dismissPill()
+            systemHud.show(.level(value: value, name: showName ? tvName : nil), on: screen,
+                           timeout: osd.timeoutSeconds)
+            return
+        }
 
-        let size = osd.style == 0
-            ? NSSize(width: Self.macWidth, height: showName ? Self.macHeightWithName : Self.macHeight)
-            : NSSize(width: Self.winWidth, height: showName ? Self.winHeightWithName : Self.winHeight)
-        show(on: screen, style: osd.style, position: osd.position, size: size,
-             timeout: osd.timeoutSeconds)
+        systemHud.dismiss()
+        model.mode = .brightness
+        model.value = value
+        model.name = showName ? tvName : nil
+        let size = NSSize(width: Self.winWidth, height: showName ? Self.winHeightWithName : Self.winHeight)
+        showPill(on: screen, position: osd.position, size: size, timeout: osd.timeoutSeconds)
     }
 
     /// Shows the "no TV on this screen — link your TVs" prompt on the cursor's screen,
     /// WITHOUT changing any brightness.
     func showUnpaired(osd: OsdSettings) {
-        showMessage(title: "No TV on this screen",
-                    subtitle: "Link each TV to its display on the TVs page.", osd: osd)
+        showMessage(title: "No TV on this display",
+                    subtitle: "Choose each TV's display on the Home page.",
+                    symbol: "display.trianglebadge.exclamationmark", osd: osd)
     }
 
     /// Shown when the only TV's automation gate blocked a hotkey because its linked
     /// display isn't attached to this Mac.
     func showDisconnected(osd: OsdSettings) {
         showMessage(title: "TV isn't connected",
-                    subtitle: "Its linked display is unplugged, so hotkeys are paused.", osd: osd)
+                    subtitle: "Its display isn't connected, so the shortcut leaves it alone.",
+                    symbol: "cable.connector.slash", osd: osd)
     }
 
-    private func showMessage(title: String, subtitle: String, osd: OsdSettings) {
+    private func showMessage(title: String, subtitle: String, symbol: String, osd: OsdSettings) {
         guard let screen = ScreenService.screenAtCursor() ?? NSScreen.main else { return }
+        if osd.style == 0 {
+            dismissPill()
+            // Symbols that don't exist on this macOS fall back to a generic warning glyph.
+            let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil
+                ? symbol : "exclamationmark.triangle.fill"
+            systemHud.show(.message(title: title, subtitle: subtitle, symbol: glyph), on: screen,
+                           timeout: osd.timeoutSeconds)
+            return
+        }
+
+        systemHud.dismiss()
         model.mode = .message
-        model.style = osd.style
         model.title = title
         model.subtitle = subtitle
-        show(on: screen, style: osd.style, position: osd.position,
-             size: NSSize(width: Self.msgWidth, height: Self.msgHeight),
-             timeout: osd.timeoutSeconds)
+        showPill(on: screen, position: osd.position,
+                 size: NSSize(width: Self.msgWidth, height: Self.msgHeight), timeout: osd.timeoutSeconds)
     }
 
     // Resolves the screen to show the OSD on: 0 = primary, 1 = the adjusted TV's paired
@@ -99,43 +121,61 @@ final class OsdController {
         }
     }
 
-    // Common show path: place on the screen's visible frame, anchor, then slide + fade in
-    // (or snap if already up). The macOS style always drops in below the menu bar at the
-    // trailing edge (like the system volume/brightness pop-up); the Windows style uses
-    // the configurable 6-corner anchor.
-    private func show(on screen: NSScreen, style: Int, position: Int, size: NSSize,
-                      timeout: TimeInterval) {
+    /// The glyph the macOS-style level HUD draws (diagnostics compare with the speaker).
+    var systemHudSymbol: String {
+        get { systemHud.levelSymbol }
+        set { systemHud.levelSymbol = newValue }
+    }
+
+    /// Diagnostics: ignore our menu bar item when placing the macOS-style HUD.
+    var systemHudIgnoresMenuBarItem: Bool {
+        get { systemHud.ignoresMenuBarItem }
+        set { systemHud.ignoresMenuBarItem = newValue }
+    }
+
+    /// Diagnostics: whichever OSD is up shows its content (the old empty-pill invariant).
+    var osdContentIsAttached: Bool {
+        let pillOK = !visible || (panel?.isVisible == true && panel?.contentView is NSHostingView<OsdView>)
+        return pillOK && systemHud.contentIsAttached
+    }
+
+    func close() {
+        systemHud.close()
+        hideTimer?.invalidate()
+        hideTimer = nil
+        generation += 1
+        panel?.orderOut(nil)
+        panel = nil
+        visible = false
+        hiding = false
+    }
+
+    // MARK: - Windows-style pill
+
+    // Places the pill at one of six anchors on the screen's visible frame, then slides +
+    // fades it in (or snaps it if already up).
+    private func showPill(on screen: NSScreen, position: Int, size: NSSize, timeout: TimeInterval) {
         let panel = ensurePanel()
 
         let work = screen.visibleFrame
-        let x: CGFloat
-        let y: CGFloat
-        let top: Bool
-        if style == 0 {
-            x = work.maxX - size.width - Self.edgeMargin
-            y = work.maxY - size.height - Self.macTopMargin
-            top = true
-        } else {
-            top = position == 3 || position == 4 || position == 5
-            x = switch position {
-            case 1, 4: work.minX + Self.edgeMargin                       // left
-            case 2, 5: work.maxX - size.width - Self.edgeMargin          // right
-            default: work.midX - size.width / 2                          // centre (0, 3)
-            }
-            y = top
-                ? work.maxY - size.height - Self.edgeMargin
-                : work.minY + Self.bottomMargin
+        let top = position == 3 || position == 4 || position == 5
+        let x: CGFloat = switch position {
+        case 1, 4: work.minX + Self.edgeMargin                       // left
+        case 2, 5: work.maxX - size.width - Self.edgeMargin          // right
+        default: work.midX - size.width / 2                          // centre (0, 3)
         }
+        let y = top
+            ? work.maxY - size.height - Self.edgeMargin
+            : work.minY + Self.bottomMargin
         finalOrigin = NSPoint(x: x, y: y)
         anchoredTop = top
-
-        applyBackdrop(style: style, size: size)
 
         let finalFrame = NSRect(origin: finalOrigin, size: size)
 
         if !visible {
             // Pre-place just off the resting spot (above for top anchors, below for bottom)
             // and fade up into place.
+            generation += 1
             panel.alphaValue = 0
             panel.setFrame(finalFrame.offsetBy(dx: 0, dy: anchoredTop ? Self.slide : -Self.slide),
                            display: false)
@@ -145,6 +185,7 @@ final class OsdController {
             animate(to: finalFrame, alpha: 1, duration: Self.fadeIn, easeOut: true)
         } else if hiding {
             // Interrupted mid fade-out: glide back to fully visible from wherever we are.
+            generation += 1
             hiding = false
             animate(to: finalFrame, alpha: 1, duration: Self.fadeIn, easeOut: true)
         } else {
@@ -162,16 +203,30 @@ final class OsdController {
 
     private func beginHide() {
         guard let panel, visible else { return }
+        generation += 1
+        let gen = generation
         hiding = true
         let exit = NSRect(origin: NSPoint(x: finalOrigin.x,
                                           y: finalOrigin.y + (anchoredTop ? Self.slide : -Self.slide)),
                           size: panel.frame.size)
         animate(to: exit, alpha: 0, duration: Self.fadeOut, easeOut: false) { [weak self] in
-            guard let self, self.hiding else { return } // a re-show interrupted the hide
+            // A re-show (or the other style taking over) since this fade began wins.
+            guard let self, self.generation == gen, self.hiding else { return }
             self.panel?.orderOut(nil)
             self.visible = false
             self.hiding = false
         }
+    }
+
+    // Hides the pill at once, e.g. when the macOS style takes over.
+    private func dismissPill() {
+        guard visible else { return }
+        hideTimer?.invalidate()
+        hideTimer = nil
+        generation += 1
+        panel?.orderOut(nil)
+        visible = false
+        hiding = false
     }
 
     private func animate(to frame: NSRect, alpha: CGFloat, duration: TimeInterval,
@@ -192,7 +247,7 @@ final class OsdController {
     private func ensurePanel() -> NSPanel {
         if let panel { return panel }
 
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.macWidth, height: Self.macHeight),
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: Self.winWidth, height: Self.winHeight),
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
         panel.level = .statusBar
@@ -207,143 +262,47 @@ final class OsdController {
 
         let hosting = NSHostingView(rootView: OsdView(model: model))
         hosting.autoresizingMask = [.width, .height]
-        self.hosting = hosting
         panel.contentView = hosting
 
         self.panel = panel
         return panel
     }
-
-    // The macOS style renders inside a real Liquid Glass container (NSGlassEffectView,
-    // macOS 26+) — the same material the system volume/brightness pop-up uses. Older
-    // systems and the Windows style fall back to the SwiftUI material background drawn
-    // by OsdView itself (`model.glassBackdrop` tells it which mode it's in).
-    private func applyBackdrop(style: Int, size: NSSize) {
-        guard let panel, let hosting else { return }
-
-        if style == 0, model.mode == .brightness, #available(macOS 26.0, *) {
-            let glass: NSGlassEffectView
-            if let existing = glassView as? NSGlassEffectView {
-                glass = existing
-            } else {
-                glass = NSGlassEffectView(frame: NSRect(origin: .zero, size: size))
-                glass.autoresizingMask = [.width, .height]
-                glassView = glass
-            }
-            glass.cornerRadius = size.height / 2 // full capsule, like the system HUD
-            if panel.contentView !== glass {
-                panel.contentView = glass
-                glass.contentView = hosting
-            }
-            model.glassBackdrop = true
-        } else {
-            if panel.contentView !== hosting {
-                hosting.removeFromSuperview() // detach from the glass container
-                panel.contentView = hosting
-            }
-            model.glassBackdrop = false
-        }
-    }
-
-    func close() {
-        hideTimer?.invalidate()
-        hideTimer = nil
-        panel?.orderOut(nil)
-        panel = nil
-        hosting = nil
-        glassView = nil
-        visible = false
-        hiding = false
-    }
 }
 
-// MARK: - Content
+// MARK: - Windows-style content
 
 @MainActor
 @Observable
 final class OsdModel {
     enum Mode { case brightness, message }
     var mode: Mode = .brightness
-    /// 0 = macOS system pop-up look, 1 = Windows/TVControlForWin pill.
-    var style = 0
-    /// True when an NSGlassEffectView provides the backdrop, so the view draws none.
-    var glassBackdrop = false
     var value = 50
     var name: String?
     var title = ""
     var subtitle = ""
 }
 
-/// The frosted HUD. Materials render as blur-behind-window because the hosting panel
-/// is transparent.
+/// The frosted Windows-style pill. Materials render as blur-behind-window because the
+/// hosting panel is transparent.
 struct OsdView: View {
     let model: OsdModel
 
-    private var cornerRadius: CGFloat {
-        model.mode == .brightness && model.style == 0 ? 23 : 14
-    }
+    private let cornerRadius: CGFloat = 14
 
     var body: some View {
         Group {
             switch model.mode {
-            case .brightness where model.style == 0: macBrightness
             case .brightness: winBrightness
             case .message: message
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
-            // The glass container (macOS 26+) supplies the backdrop for the macOS style;
-            // everything else draws the classic frosted material itself.
-            if !model.glassBackdrop {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(.regularMaterial)
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
-            }
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.regularMaterial)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
         }
-    }
-
-    /// Mirrors the macOS 26 volume/brightness pop-up: optional device-name row, then a
-    /// thin dotted track with dim/bright sun icons at the ends. No numeric readout —
-    /// the system HUD has none.
-    private var macBrightness: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            if let name = model.name {
-                Text(name)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .padding(.leading, 4)
-            }
-            HStack(spacing: 12) {
-                Image(systemName: "sun.min.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(.primary.opacity(0.16))
-                        // Step dots, revealed only where the fill hasn't covered them —
-                        // like the system HUD's tick marks.
-                        HStack(spacing: 0) {
-                            ForEach(1..<16) { _ in
-                                Circle()
-                                    .fill(.primary.opacity(0.22))
-                                    .frame(width: 2.5, height: 2.5)
-                                    .frame(maxWidth: .infinity)
-                            }
-                        }
-                        Capsule().fill(.primary.opacity(0.85))
-                            .frame(width: max(4, geo.size.width * CGFloat(model.value) / 100))
-                    }
-                }
-                .frame(height: 4)
-                Image(systemName: "sun.max.fill")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 20)
     }
 
     /// The TVControlForWin-style pill (icon + bar + numeric value).
