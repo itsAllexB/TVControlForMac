@@ -343,6 +343,9 @@ final class UpdateManager {
 
         progress = 0
         state = .downloading
+        // A download that arrives intact but whose app is refused (say, signed by someone
+        // else) isn't a download problem: "try again later" wouldn't help.
+        var downloaded = false
         do {
             let service = self.service
             let file = try await service.download(update) { [weak self] fraction in
@@ -352,6 +355,7 @@ final class UpdateManager {
                     self.progress = percent
                 }
             }
+            downloaded = true
             let app = Bundle.main.bundleURL
             try await Task.detached {
                 let staged = try UpdateService.stage(archive: file, version: asset.version, nextTo: app)
@@ -363,10 +367,10 @@ final class UpdateManager {
             return true
         } catch {
             if Task.isCancelled { return false }
-            Log.write("update: download failed (\(error.localizedDescription))")
+            Log.write("update: \(downloaded ? "\(update.version) didn't pass its checks" : "download failed") (\(error.localizedDescription))")
             archive = nil
             try? FileManager.default.removeItem(at: service.downloadDir.appendingPathComponent(asset.name))
-            failure = "Download failed. Try again later."
+            failure = downloaded ? "The update didn't pass its checks." : "Download failed. Try again later."
             state = .failed
             return false
         }
@@ -410,7 +414,7 @@ final class UpdateManager {
             Log.write("update: \(update.version) didn't pass its checks (\(error.localizedDescription))")
             self.archive = nil
             try? FileManager.default.removeItem(at: archive)
-            failure = "The update didn't pass its checks"
+            failure = "The update didn't pass its checks."
             state = .failed
             return
         }
@@ -428,7 +432,7 @@ final class UpdateManager {
         } catch {
             Log.write("update: \(error.localizedDescription)")
             try? FileManager.default.removeItem(at: staged.root)
-            failure = "Couldn't start the update"
+            failure = "Couldn't start the update."
             state = .failed
             return
         }

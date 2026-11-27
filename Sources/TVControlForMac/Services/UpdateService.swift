@@ -207,6 +207,8 @@ struct UpdateService: Sendable {
         var request = URLRequest(url: feed)
         request.setValue("\(AppInfo.name)/\(AppInfo.version)", forHTTPHeaderField: "User-Agent")
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        // Otherwise the system adds the user's first preferred language.
+        request.setValue("en", forHTTPHeaderField: "Accept-Language")
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw UpdateError("no HTTP answer") }
@@ -388,6 +390,7 @@ struct UpdateService: Sendable {
         var request = URLRequest(url: url)
         request.setValue("\(AppInfo.name)/\(AppInfo.version)", forHTTPHeaderField: "User-Agent")
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        request.setValue("en", forHTTPHeaderField: "Accept-Language")
         let task = session.dataTask(with: request)
 
         try await withTaskCancellationHandler {
@@ -476,11 +479,14 @@ struct UpdateService: Sendable {
     struct ArchiveEntry: Equatable, Sendable {
         let name: String
         let isSymlink: Bool
-        /// Unix permission and type bits, when the zip was made on a Unix system.
+        /// Unix permission and type bits, when the entry has them.
         let mode: UInt32?
     }
 
-    /// Reads a zip's table of contents without unpacking anything.
+    /// Reads a zip's table of contents without unpacking anything. ditto doesn't unpack by
+    /// the table of contents but walks the entries' own (local) headers from the start of
+    /// the file, so those have to be exactly the entries listed, in one unbroken run, with
+    /// the same names: otherwise what's checked here isn't what gets unpacked.
     static func archiveEntries(_ data: Data) throws -> [ArchiveEntry] {
         let bytes = [UInt8](data)
         func u16(_ at: Int) -> Int { Int(bytes[at]) | Int(bytes[at + 1]) << 8 }
@@ -506,22 +512,45 @@ struct UpdateService: Sendable {
         guard count > 0, count <= 20000, offset + size <= end else { throw UpdateError("the zip's table of contents is damaged") }
 
         var entries: [ArchiveEntry] = []
+        // Where each entry's local header is, how much data follows it, and its name's bytes.
+        var locals: [(offset: Int, flags: Int, compressed: Int, name: ArraySlice<UInt8>)] = []
         var position = offset
         for _ in 0..<count {
             guard position + 46 <= end, u32(position) == 0x0201_4b50 else {
                 throw UpdateError("the zip's table of contents is damaged")
             }
-            let madeBy = u16(position + 4) >> 8
             let nameLength = u16(position + 28), extraLength = u16(position + 30), commentLength = u16(position + 32)
             let external = UInt32(truncatingIfNeeded: u32(position + 38))
             guard position + 46 + nameLength <= end else { throw UpdateError("the zip's table of contents is damaged") }
-            guard let name = String(bytes: bytes[(position + 46)..<(position + 46 + nameLength)], encoding: .utf8) else {
+            let nameBytes = bytes[(position + 46)..<(position + 46 + nameLength)]
+            guard let name = String(bytes: nameBytes, encoding: .utf8) else {
                 throw UpdateError("a name in the zip isn't readable")
             }
-            let mode: UInt32? = madeBy == 3 ? external >> 16 : nil // 3: made on Unix
+            // ditto applies the Unix mode in the upper half whatever system the zip says it
+            // was made on, so it's read whenever it's there, not only for "made on Unix".
+            let mode: UInt32? = external >> 16 != 0 ? external >> 16 : nil
             entries.append(ArchiveEntry(name: name, isSymlink: mode.map { $0 & 0o170000 == 0o120000 } ?? false, mode: mode))
+            locals.append((u32(position + 42), u16(position + 8), u32(position + 20), nameBytes))
             position += 46 + nameLength + extraLength + commentLength
         }
+
+        var next = 0
+        for local in locals.sorted(by: { $0.offset < $1.offset }) {
+            guard local.offset == next, local.offset + 30 <= offset, u32(local.offset) == 0x0403_4b50 else {
+                throw UpdateError("the zip's entries don't match its table of contents")
+            }
+            let nameLength = u16(local.offset + 26), extraLength = u16(local.offset + 28)
+            let nameStart = local.offset + 30
+            guard nameStart + nameLength <= offset, bytes[nameStart..<(nameStart + nameLength)].elementsEqual(local.name) else {
+                throw UpdateError("the zip's entries don't match its table of contents")
+            }
+            next = nameStart + nameLength + extraLength + local.compressed
+            if local.flags & 0x08 != 0 { // sizes follow the data, optionally with a signature
+                guard next + 4 <= offset else { throw UpdateError("the zip's entries don't match its table of contents") }
+                next += u32(next) == 0x0807_4b50 ? 16 : 12
+            }
+        }
+        guard next == offset else { throw UpdateError("the zip's entries don't match its table of contents") }
         return entries
     }
 
@@ -655,6 +684,16 @@ struct UpdateService: Sendable {
     ///   window (`--background`) and without taking focus.
     static func launchSwap(_ staged: StagedUpdate, replacing app: URL, quiet: Bool,
                            failStep: String? = nil) throws -> pid_t {
+        // The helper moves whatever is at the path this copy started from. If the app was moved
+        // or renamed since, there's nothing there to replace and, once this copy has quit,
+        // nothing to start again: the Mac would be left without the app running.
+        let found = (try? Data(contentsOf: app.appendingPathComponent("Contents/Info.plist")))
+            .flatMap { try? PropertyListSerialization.propertyList(from: $0, format: nil) as? [String: Any] }
+        guard found?["CFBundleIdentifier"] as? String == AppInfo.bundleIdentifier,
+              found?["CFBundleShortVersionString"] as? String == AppInfo.version else {
+            throw UpdateError("the app is no longer at \(app.path)")
+        }
+
         let aside = staged.root.appendingPathComponent("previous.app")
         let log = AppPaths.dataDir.appendingPathComponent("log.txt")
 

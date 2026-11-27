@@ -139,9 +139,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppState.shared.shutdown()
     }
 
-    /// True while the main window is on screen (not closed to the menu bar).
+    /// True while the main window is open (not closed to the menu bar). A minimized
+    /// window counts as open: it's still the user's window, and an unattended update
+    /// would take it away.
     var isMainWindowVisible: Bool {
-        windowController?.window?.isVisible ?? false
+        guard let window = windowController?.window else { return false }
+        return window.isVisible || window.isMiniaturized
     }
 
     /// The window is titled after the page it shows, like System Settings.

@@ -294,6 +294,16 @@ enum UpdateCli {
         refused("setuid file", entries([("\(app)/Contents/MacOS/TVControlForMac", 0o104755)]))
         refused("empty path part", entries([("\(app)//evil", 0o100644)]))
         refused("no Info.plist", zip([("\(app)/", 0o040755), ("\(app)/Contents/MacOS/TVControlForMac", 0o100755)]))
+        // ditto unpacks by the local headers and applies Unix modes whatever the zip says it
+        // was made on, so the checks have to see the same.
+        let exe = "\(app)/Contents/MacOS/TVControlForMac"
+        let base: [(String, UInt32)] = [("\(app)/", 0o040755), ("\(app)/Contents/", 0o040755), plist]
+        accepted("made on MS-DOS", zip(base + [(exe, 0o100755)], madeBy: 0))
+        refused("setuid file made on MS-DOS", zip(base + [(exe, 0o104755)], madeBy: 0))
+        refused("writing through a link made on OS X", zip(base + [("\(app)/Contents/link", 0o120755),
+                                                             ("\(app)/Contents/link/evil", 0o100644)], madeBy: 19))
+        refused("local header names another file", zip(base + [(exe, 0o100755)], localNames: [exe: "../../evil"]))
+        refused("local entry not in the table of contents", zip(base, hidden: "\(app)/Contents/MacOS/evil"))
         refused("not a zip", Data("definitely not a zip file".utf8))
         refused("empty", Data())
         var truncated = entries([])
@@ -321,24 +331,32 @@ enum UpdateCli {
 
     /// A zip with the given (name, unix mode) entries and no contents: just enough for the
     /// table of contents the archive checks read.
-    private static func zip(_ entries: [(String, UInt32)]) -> Data {
+    /// `madeBy` is the system the zip claims to come from (3: Unix, 0: MS-DOS); `localNames`
+    /// gives an entry a different name in its local header; `hidden` adds a local entry the
+    /// table of contents doesn't list.
+    private static func zip(_ entries: [(String, UInt32)], madeBy: Int = 3, localNames: [String: String] = [:],
+                            hidden: String? = nil) -> Data {
         var local = Data(), central = Data()
         func u16(_ value: Int, into data: inout Data) { data.append(contentsOf: [UInt8(value & 0xFF), UInt8(value >> 8 & 0xFF)]) }
         func u32(_ value: Int, into data: inout Data) { u16(value & 0xFFFF, into: &data); u16(value >> 16 & 0xFFFF, into: &data) }
-        for (name, mode) in entries {
-            let bytes = Array(name.utf8)
-            let offset = local.count
+        func localHeader(_ bytes: [UInt8]) {
             u32(0x0403_4b50, into: &local); u16(20, into: &local); u16(0x0800, into: &local); u16(0, into: &local)
             u16(0, into: &local); u16(0, into: &local); u32(0, into: &local); u32(0, into: &local); u32(0, into: &local)
             u16(bytes.count, into: &local); u16(0, into: &local); local.append(contentsOf: bytes)
+        }
+        for (name, mode) in entries {
+            let bytes = Array(name.utf8)
+            let offset = local.count
+            localHeader(Array((localNames[name] ?? name).utf8))
 
-            u32(0x0201_4b50, into: &central); u16(3 << 8 | 20, into: &central); u16(20, into: &central)
+            u32(0x0201_4b50, into: &central); u16(madeBy << 8 | 20, into: &central); u16(20, into: &central)
             u16(0x0800, into: &central); u16(0, into: &central); u16(0, into: &central); u16(0, into: &central)
             u32(0, into: &central); u32(0, into: &central); u32(0, into: &central)
             u16(bytes.count, into: &central); u16(0, into: &central); u16(0, into: &central)
             u16(0, into: &central); u16(0, into: &central); u32(Int(mode) << 16, into: &central)
             u32(offset, into: &central); central.append(contentsOf: bytes)
         }
+        if let hidden { localHeader(Array(hidden.utf8)) }
         var end = Data()
         u32(0x0605_4b50, into: &end); u16(0, into: &end); u16(0, into: &end)
         u16(entries.count, into: &end); u16(entries.count, into: &end)

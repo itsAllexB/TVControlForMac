@@ -81,7 +81,9 @@ echo "Built $APP"
 
 if [[ $PACKAGE == 1 ]]; then
     VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Support/Info.plist)"
-    if [[ ! "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
+    # Two or three parts: the updater reads a release tag as three parts, so a fourth would
+    # never match the version the app inside says.
+    if [[ ! "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
         echo "CFBundleShortVersionString \"$VERSION\" isn't a plain version like 3.0.1" >&2
         exit 1
     fi
@@ -91,8 +93,14 @@ if [[ $PACKAGE == 1 ]]; then
 
     # Installed copies only take an update from the signer they were signed by, and macOS
     # ties the Local Network permission to it too. An ad-hoc signature is a new identity
-    # every build, so say so loudly before anything is published with one.
+    # every build, and copies signed with a certificate would refuse such a release for
+    # good, so it takes ALLOW_ADHOC_RELEASE=1 to package one.
     if [[ "$SIGNER" == "-" ]]; then
+        if [[ "${ALLOW_ADHOC_RELEASE:-}" != 1 ]]; then
+            echo "Refusing to package a release signed ad hoc (no signing certificate found, or SIGN_IDENTITY=-)." >&2
+            echo "Copies signed with a certificate would refuse it. Set ALLOW_ADHOC_RELEASE=1 to package anyway." >&2
+            exit 1
+        fi
         echo "warning: signed ad hoc. Copies signed with a certificate will refuse this update," >&2
         echo "         and macOS may ask for Local Network permission again after it." >&2
     fi
@@ -101,27 +109,35 @@ if [[ $PACKAGE == 1 ]]; then
     DMG="dist/TVControlForMac-$VERSION.dmg"
     rm -f "$ZIP" "$DMG"
 
+    STAGE="$(mktemp -d "${TMPDIR:-/tmp}/tvcontrol-dmg.XXXXXX")"
+    CHECK="$(mktemp -d "${TMPDIR:-/tmp}/tvcontrol-zipcheck.XXXXXX")"
+    # Release files that didn't pass every check below don't stay in dist/ to be published.
+    PACKAGED=0
+    trap 'rm -rf "$STAGE" "$CHECK"; [[ $PACKAGED == 1 ]] || rm -f "$ZIP" "$DMG"' EXIT
+
     # ditto keeps the bundle exactly as signed (permissions, extended attributes); the
     # updater unpacks it with ditto too.
     ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 
-    STAGE="$(mktemp -d "${TMPDIR:-/tmp}/tvcontrol-dmg.XXXXXX")"
-    CHECK="$(mktemp -d "${TMPDIR:-/tmp}/tvcontrol-zipcheck.XXXXXX")"
-    trap 'rm -rf "$STAGE" "$CHECK"' EXIT
     ditto "$APP" "$STAGE/TVControlForMac.app"
     ln -s /Applications "$STAGE/Applications"
     hdiutil create -quiet -volname "TVControlForMac $VERSION" -srcfolder "$STAGE" \
         -fs HFS+ -format UDZO -ov "$DMG"
 
-    # Check the zip the way the updater will see it before calling the release done.
-    ditto -x -k "$ZIP" "$CHECK"
-    codesign --verify --deep --strict "$CHECK/TVControlForMac.app"
-    ZIPPED_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$CHECK/TVControlForMac.app/Contents/Info.plist")"
+    # Check the zip the way the updater will see it before calling the release done: the
+    # app's own checks (zip layout, bundle, signature, same signer), then once more by hand.
+    TVCONTROL_DATA_DIR="$CHECK/data" "$APP/Contents/MacOS/TVControlForMac" --update-verify "$ZIP" "$VERSION"
+    UNZIPPED="$CHECK/unzipped"
+    mkdir "$UNZIPPED"
+    ditto -x -k "$ZIP" "$UNZIPPED"
+    codesign --verify --deep --strict "$UNZIPPED/TVControlForMac.app"
+    ZIPPED_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$UNZIPPED/TVControlForMac.app/Contents/Info.plist")"
     if [[ "$ZIPPED_VERSION" != "$VERSION" ]]; then
         echo "The zipped app says $ZIPPED_VERSION, not $VERSION" >&2
         exit 1
     fi
 
+    PACKAGED=1
     echo
     echo "Release files for $VERSION (signed: $([[ $SIGNER == - ]] && echo ad hoc || echo "$SIGNER")):"
     for file in "$ZIP" "$DMG"; do
