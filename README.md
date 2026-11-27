@@ -79,8 +79,7 @@ It's the Mac counterpart of [the Windows version](https://github.com/itsAllexB/T
 
 Samsung, Roku, Fire TV and Hisense VIDAA TVs are not supported.
 
-Tested with this app on an LG OLED42C3. Google TV support comes from the Windows version,
-where it was tested on a TCL 65C765. No rooting or developer firmware needed.
+Tested on an LG OLED42C3 and a TCL 65C765. No rooting or developer firmware needed.
 
 ## Install
 

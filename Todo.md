@@ -44,9 +44,12 @@ Ideas and next steps after **v3.0**.
       schedules.
 
 ## Not yet tested on real hardware
-- [ ] **Google TV from the Mac**: pairing, power, and TCL brightness over ADB (so far
-      tested only with the Windows version, on a TCL 65C765).
-- [ ] **Wake-on-LAN** end to end, for LG and Google TV.
+- [x] **Google TV from the Mac**, on a TCL 65C765 (Android 14): code pairing, the paired
+      connection, power off and on, brightness over ADB with read-back, and the MAC address
+      learned over ADB. Done from the command-line diagnostics; the same in the app's
+      window has only been driven against the fake TV (`--fake-tv`).
+- [ ] **Wake-on-LAN** end to end for LG. (The TCL came back from standby with the magic
+      packet and the power key both sent.)
 - [ ] **Power automation** live: off on sleep, off on shutdown, display sleep (screen off
       and turn off), on when the displays wake.
 - [ ] **Launch at login**, including the "At login, show" choice.
