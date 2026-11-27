@@ -222,6 +222,13 @@ enum SelfTestCli {
         // object with neither "Devices" nor "Settings") must not count as an empty backup.
         check("files: a JSON object with neither Devices nor Settings is refused",
               (try? store.deserializeBackup(#"{ "name": "something else", "version": 1 }"#)) == nil)
+        // Every real backup has both sections; one without the TVs would remove them all.
+        check("files: a settings-only file is refused",
+              (try? store.deserializeBackup(#"{ "Settings": { "HotkeyStep": 5 } }"#)) == nil)
+        check("files: a devices-only file is refused",
+              (try? store.deserializeBackup(#"{ "Devices": [] }"#)) == nil)
+        check("files: a backup with no TVs in it still imports",
+              (try? store.deserializeBackup(#"{ "Devices": [], "Settings": {} }"#))?.devices?.isEmpty == true)
     }
 
     // Files as LGforMac 1.0 wrote them: what the first launch after the rename copies over

@@ -53,14 +53,13 @@ final class DeviceStore {
     /// Parses a backup string; throws if the file isn't a valid TVControlForMac /
     /// TVControlForWin backup.
     func deserializeBackup(_ json: String) throws -> BackupData {
-        var data = try JSONDecoder().decode(BackupData.self, from: Data(json.utf8))
+        let data = try JSONDecoder().decode(BackupData.self, from: Data(json.utf8))
         // Importing replaces everything: a JSON file picked by mistake mustn't read as an
-        // empty backup.
-        guard data.devices != nil || data.settings != nil else {
+        // empty backup. Both apps always write both sections, so a file missing either
+        // isn't one; a settings-only file would otherwise remove every TV and its pairing.
+        guard data.devices != nil && data.settings != nil else {
             throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Not a settings backup."))
         }
-        data.devices = data.devices ?? []
-        data.settings = data.settings ?? AppSettings()
         return data
     }
 }
