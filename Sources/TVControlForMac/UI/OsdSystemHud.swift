@@ -43,6 +43,14 @@ enum OsdSystemHudMetrics {
     static let emptyOpacity: Double = 0.25
     /// Right inset after the track (308 − 62.5 − 214).
     static let trackTrailingInset: CGFloat = 31.5
+
+    // The percentage is this app's addition (the system HUD has no number). It takes the
+    // trailing end of the row: the track gives up room for it and still ends on whole
+    // points per segment (176 pt, 11 pt each), so the segments stay crisp.
+    static let valueTrailingInset: CGFloat = 22.5
+    static let valueWidth: CGFloat = 37
+    static let valueGap: CGFloat = 10
+    static let trackWidthWithValue: CGFloat = 176
 }
 
 /// Measured motion of the system HUD (macOS 27.3, 60 fps recordings).
@@ -83,10 +91,10 @@ enum OsdSystemHudMotion {
 @Observable
 final class OsdSystemHudModel {
     enum Content: Equatable {
-        case level(value: Int, name: String?)
+        case level(value: Int, name: String?, showsValue: Bool)
         case message(title: String, subtitle: String, symbol: String)
     }
-    var content: Content = .level(value: 50, name: nil)
+    var content: Content = .level(value: 50, name: nil, showsValue: false)
     /// The glyph drawn for the level HUD. Diagnostics can swap in the speaker to compare
     /// pixel-for-pixel against the system volume HUD.
     var levelSymbol = "sun.max.fill"
@@ -494,16 +502,20 @@ struct OsdSystemHudView: View {
             ZStack(alignment: .topLeading) {
                 glyph
                     .position(x: OsdSystemHudMetrics.glyphCentreX, y: geo.size.height / 2)
+                let width = geo.size.width - OsdSystemHudMetrics.trackX - trailingInset
                 trailing
-                    .frame(width: geo.size.width - OsdSystemHudMetrics.trackX
-                           - OsdSystemHudMetrics.trackTrailingInset, alignment: .leading)
-                    .position(x: OsdSystemHudMetrics.trackX
-                              + (geo.size.width - OsdSystemHudMetrics.trackX - OsdSystemHudMetrics.trackTrailingInset) / 2,
-                              y: geo.size.height / 2)
+                    .frame(width: width, alignment: .leading)
+                    .position(x: OsdSystemHudMetrics.trackX + width / 2, y: geo.size.height / 2)
             }
         }
         .foregroundStyle(.white)
         .environment(\.colorScheme, .dark)
+    }
+
+    // With the percentage shown, the row runs closer to the capsule's end.
+    private var trailingInset: CGFloat {
+        if case .level(_, _, true) = model.content { return OsdSystemHudMetrics.valueTrailingInset }
+        return OsdSystemHudMetrics.trackTrailingInset
     }
 
     private var symbolName: String {
@@ -523,23 +535,39 @@ struct OsdSystemHudView: View {
 
     @ViewBuilder private var trailing: some View {
         switch model.content {
-        case .level(let value, let name):
-            // A name, when shown, is a caption above the track; the glyph and the track
-            // keep their positions relative to each other and the HUD keeps its size.
-            VStack(alignment: .leading, spacing: 6) {
-                if let name {
-                    Text(name)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+        case .level(let value, let name, let showsValue):
+            let level = max(0, min(100, value))
+            let trackWidth = showsValue ? OsdSystemHudMetrics.trackWidthWithValue : OsdSystemHudMetrics.trackWidth
+            HStack(spacing: OsdSystemHudMetrics.valueGap) {
+                // A name, when shown, is a caption above the track; the glyph and the track
+                // keep their positions relative to each other and the HUD keeps its size.
+                VStack(alignment: .leading, spacing: 6) {
+                    if let name {
+                        Text(name)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    OsdLevelIndicator(level: Double(level) / 100)
+                        .frame(width: trackWidth, height: OsdSystemHudMetrics.trackHeight)
                 }
-                OsdLevelIndicator(level: Double(max(0, min(100, value))) / 100)
-                    .frame(width: OsdSystemHudMetrics.trackWidth, height: OsdSystemHudMetrics.trackHeight)
+                .frame(width: trackWidth, alignment: .leading)
+                // Without a name the track sits exactly on the centre line; with one, the pair
+                // is centred as a block, nudged up 1 pt for the caption's unused descender space.
+                .offset(y: name == nil ? 0 : -1)
+
+                if showsValue {
+                    // Centred on the capsule's own centre line whether or not there's a name.
+                    Text("\(level)%")
+                        .font(.system(size: 13, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.9))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .frame(width: OsdSystemHudMetrics.valueWidth, alignment: .trailing)
+                }
             }
-            // Without a name the track sits exactly on the centre line; with one, the pair is
-            // centred as a block, nudged up 1 pt for the caption's unused descender space.
-            .offset(y: name == nil ? 0 : -1)
         case .message(let title, let subtitle, _):
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(Font(Self.titleFont))

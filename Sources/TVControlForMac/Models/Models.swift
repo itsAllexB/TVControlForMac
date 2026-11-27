@@ -188,11 +188,14 @@ struct OsdSettings: Codable {
     var monitor: Int = 0
     var timeoutSeconds: Double = 1.6
     var showTvName: Bool = false
+    /// Whether the brightness is also written out as a number ("60%") next to the bar.
+    var showPercentage: Bool = true
     var showOnSchedule: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case enabled = "Enabled", style = "Style", position = "Position", monitor = "Monitor"
         case timeoutSeconds = "TimeoutSeconds", showTvName = "ShowTvName", showOnSchedule = "ShowOnSchedule"
+        case showPercentage = "ShowPercentage"
     }
 
     init() {}
@@ -205,6 +208,7 @@ struct OsdSettings: Codable {
         monitor = try c.decodeIfPresent(Int.self, forKey: .monitor) ?? 0
         timeoutSeconds = try c.decodeIfPresent(Double.self, forKey: .timeoutSeconds) ?? 1.6
         showTvName = try c.decodeIfPresent(Bool.self, forKey: .showTvName) ?? false
+        showPercentage = try c.decodeIfPresent(Bool.self, forKey: .showPercentage) ?? true
         showOnSchedule = try c.decodeIfPresent(Bool.self, forKey: .showOnSchedule) ?? false
     }
 }

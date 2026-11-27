@@ -11,7 +11,7 @@ import AppKit
 ///   --osd-preview 30 --screen 1              on NSScreen.screens[1] (as "the TV's screen")
 ///   --osd-preview 30 --screen cursor         on the screen under the pointer
 ///   --osd-preview 30 --duration 3 --theme dark
-///   --osd-preview 25 --glyph speaker         draw the speaker, to compare with the volume HUD
+///   --osd-preview 25 --glyph speaker --percent off   the speaker and no number, to compare with the volume HUD
 ///   --osd-preview 25 --anchor fallback       ignore our menu bar item (sit where the volume HUD does)
 ///   --osd-preview 30 --stress 200            200 rapid shows mixing styles, modes, screens
 ///                                            and values, ending on a plain brightness show
@@ -21,7 +21,7 @@ struct OsdTestRequest {
         usage: --osd-preview [value] [--style mac|win] [--position 0-5] [--mode brightness|unpaired|disconnected]
                              [--name TEXT] [--screen primary|cursor|<index>] [--duration SECONDS]
                              [--theme system|light|dark] [--glyph speaker|SYMBOL]
-                             [--anchor item|fallback] [--stress COUNT]
+                             [--anchor item|fallback] [--percent on|off] [--stress COUNT]
         """
 
     var value = 50
@@ -34,6 +34,8 @@ struct OsdTestRequest {
     var theme: String?
     var glyph: String?
     var anchor: String?
+    /// The number next to the bar. Off for comparisons with the system HUD, which has none.
+    var percent = true
     var stress = 0
 
     init?(arguments: [String]) {
@@ -51,6 +53,7 @@ struct OsdTestRequest {
             case "--theme": guard let v = it.next() else { return nil }; theme = v
             case "--glyph": guard let v = it.next() else { return nil }; glyph = v
             case "--anchor": guard let v = it.next() else { return nil }; anchor = v
+            case "--percent": guard let v = it.next(), ["on", "off"].contains(v) else { return nil }; percent = v == "on"
             case "--stress": guard let v = it.next().flatMap(Int.init) else { return nil }; stress = v
             default:
                 guard let v = Int(arg) else { return nil }
@@ -71,13 +74,14 @@ struct OsdTestRequest {
         theme = info["theme"] as? String
         glyph = info["glyph"] as? String
         anchor = info["anchor"] as? String
+        percent = info["percent"] as? Bool ?? percent
         stress = info["stress"] as? Int ?? stress
     }
 
     // Distributed notifications only carry property-list values.
     var userInfo: [String: Any] {
         var info: [String: Any] = ["value": value, "style": style, "position": position, "mode": mode, "screen": screen,
-                                   "duration": duration, "stress": stress]
+                                   "duration": duration, "stress": stress, "percent": percent]
         if let name { info["name"] = name }
         if let theme { info["theme"] = theme }
         if let glyph { info["glyph"] = glyph }
@@ -121,6 +125,7 @@ extension OsdController {
         osd.position = request.position
         osd.timeoutSeconds = request.duration
         osd.showTvName = request.name != nil
+        osd.showPercentage = request.percent
         var screenId: String?
         switch request.screen {
         case "cursor":

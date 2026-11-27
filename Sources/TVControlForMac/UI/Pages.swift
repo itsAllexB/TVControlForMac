@@ -319,6 +319,7 @@ struct OsdSettingsView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 40, alignment: .trailing)
                 }
+                ToggleRow("Show percentage", isOn: osd(\.showPercentage))
                 ToggleRow("Show TV name", isOn: osd(\.showTvName))
                 ToggleRow("Show when a schedule runs", isOn: osd(\.showOnSchedule))
             }

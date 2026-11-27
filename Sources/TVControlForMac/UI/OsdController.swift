@@ -55,14 +55,16 @@ final class OsdController {
         let value = max(0, min(100, value))
         if osd.style == 0 {
             dismissPill()
-            systemHud.show(.level(value: value, name: showName ? tvName : nil), on: screen,
-                           timeout: osd.timeoutSeconds)
+            systemHud.show(.level(value: value, name: showName ? tvName : nil,
+                                  showsValue: osd.showPercentage),
+                           on: screen, timeout: osd.timeoutSeconds)
             return
         }
 
         systemHud.dismiss()
         model.mode = .brightness
         model.value = value
+        model.showsValue = osd.showPercentage
         model.name = showName ? tvName : nil
         let size = NSSize(width: Self.winWidth, height: showName ? Self.winHeightWithName : Self.winHeight)
         showPill(on: screen, position: osd.position, size: size, timeout: osd.timeoutSeconds)
@@ -277,6 +279,7 @@ final class OsdModel {
     enum Mode { case brightness, message }
     var mode: Mode = .brightness
     var value = 50
+    var showsValue = true
     var name: String?
     var title = ""
     var subtitle = ""
@@ -326,10 +329,12 @@ struct OsdView: View {
                     }
                 }
                 .frame(height: 5)
-                Text("\(model.value)")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .frame(minWidth: 28, alignment: .trailing)
+                if model.showsValue {
+                    Text("\(model.value)")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .frame(minWidth: 28, alignment: .trailing)
+                }
             }
         }
         .padding(.horizontal, 16)
