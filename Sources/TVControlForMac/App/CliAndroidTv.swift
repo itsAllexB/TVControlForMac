@@ -248,7 +248,12 @@ enum AtvCli {
         do {
             let (credential, base64) = try AndroidTvIdentity.createClientCertificate()
             guard let data = Data(base64Encoded: base64) else { print("internal error"); return }
-            try data.write(to: URL(fileURLWithPath: path))
+            // The private key is in there unencrypted: owner-only, as --adb-key new does.
+            guard FileManager.default.createFile(atPath: path, contents: data,
+                                                 attributes: [.posixPermissions: 0o600]) else {
+                print("failed: can't write \(path)")
+                return
+            }
             print("wrote \(data.count) bytes to \(path) (no password; identity via \(credential.route.rawValue))")
         } catch {
             print("failed: \(error.localizedDescription)")
