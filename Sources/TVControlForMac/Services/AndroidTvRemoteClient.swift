@@ -523,10 +523,20 @@ final class AndroidTvRemoteClient: @unchecked Sendable {
     /// The TLS version in use (diagnostics).
     var tlsVersion: String { lock.withLock { tls }?.tlsVersion ?? "TLS ?" }
 
+    // Set from the owner's thread and read from the receive loop, so kept behind the lock.
+    private var powerChanged: ((Bool) -> Void)?
+    private var pinged: ((UInt64) -> Void)?
+
     /// Called from the receive loop whenever the TV reports its power state.
-    var onPowerChanged: ((Bool) -> Void)?
+    var onPowerChanged: ((Bool) -> Void)? {
+        get { lock.withLock { powerChanged } }
+        set { lock.withLock { powerChanged = newValue } }
+    }
     /// Called for each ping the TV sends (diagnostics).
-    var onPing: ((UInt64) -> Void)?
+    var onPing: ((UInt64) -> Void)? {
+        get { lock.withLock { pinged } }
+        set { lock.withLock { pinged = newValue } }
+    }
 
     /// Connects and completes the handshake. Success means the TV accepted our certificate; a TV
     /// we aren't paired with drops the connection instead, surfacing here as an error.
