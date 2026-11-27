@@ -32,6 +32,7 @@ struct TVControlForMacApp: App {
             MenuBarView()
         } label: {
             Image(systemName: "tv")
+                .accessibilityLabel(AppInfo.name) // otherwise VoiceOver reads the symbol's name, "Tv"
         }
         .menuBarExtraStyle(.window)
     }

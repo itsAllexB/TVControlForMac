@@ -199,6 +199,9 @@ final class AndroidTvController: TvController {
                 Log.write("\(device.host): the TV no longer accepts our certificate — pairing again is needed")
                 device.clientCertificate = ""
                 onDeviceChanged?()
+                // Say so now: the loop only gets to pair() after its backoff, and until then
+                // the card would go on saying "Connecting…".
+                setStatus(.needsPairing, "Needs pairing again")
             } else {
                 Log.write("\(device.host): the TV refused our certificate (\(error.localizedDescription)); trying once more")
                 setStatus(.disconnected, "Reconnecting")
