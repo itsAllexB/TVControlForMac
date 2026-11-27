@@ -68,16 +68,28 @@ struct MainView: View {
             case .settings: SettingsView()
             }
         }
-        // Pages without buttons of their own still get a toolbar, so the title bar is the
-        // same height on every page.
-        .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
-            }
-        }
+        .toolbar { TitleBarHeightKeeper() }
         .onChange(of: state.page, initial: true) {
             (NSApp.delegate as? AppDelegate)?.setWindowTitle(state.page.title)
         }
         .frame(minWidth: 760, minHeight: 500)
+    }
+}
+
+/// An invisible toolbar item. Pages without buttons of their own still get a toolbar this
+/// way, so the title bar is the same height on every page.
+private struct TitleBarHeightKeeper: ToolbarContent {
+    var body: some ToolbarContent {
+        if #available(macOS 26.0, *) {
+            // On macOS 26 every toolbar item sits on glass; this one mustn't show any.
+            ToolbarItem(placement: .automatic) { placeholder }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .automatic) { placeholder }
+        }
+    }
+
+    private var placeholder: some View {
+        Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
     }
 }

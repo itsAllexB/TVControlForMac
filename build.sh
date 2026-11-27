@@ -35,8 +35,22 @@ ARCHS=()
 if [[ $CONFIG == release ]]; then
     ARCHS=(--arch arm64 --arch x86_64)
 fi
-swift build -c "$CONFIG" ${ARCHS[@]+"${ARCHS[@]}"}
-BIN="$(swift build -c "$CONFIG" ${ARCHS[@]+"${ARCHS[@]}"} --show-bin-path)"
+
+# Record the SDK the app is really built with. SwiftPM's build system writes the
+# deployment target (14.0) into the binary as its SDK version, and macOS then treats the
+# app as one built for macOS 14: on macOS 26 and later it gets the old look instead of
+# Liquid Glass (flat sidebar, old toolbar and controls). MIN_MACOS matches Package.swift.
+MIN_MACOS="14.0"
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
+SDK_FLAGS=(-Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_MACOS" -Xlinker "$SDK_VERSION")
+
+swift build -c "$CONFIG" ${ARCHS[@]+"${ARCHS[@]}"} "${SDK_FLAGS[@]}"
+BIN="$(swift build -c "$CONFIG" ${ARCHS[@]+"${ARCHS[@]}"} "${SDK_FLAGS[@]}" --show-bin-path)"
+
+if ! vtool -show-build "$BIN/TVControlForMac" | grep -q "sdk $SDK_VERSION"; then
+    echo "The binary doesn't record SDK $SDK_VERSION; the app would get the pre-macOS 26 look." >&2
+    exit 1
+fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
