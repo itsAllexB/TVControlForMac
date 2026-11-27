@@ -7,6 +7,7 @@ import Foundation
 ///   TVControlForMac --scan                 SSDP-discover TVs on the LAN
 ///   TVControlForMac --probe <host>         connect, pair (stored key if known), report state
 ///   TVControlForMac --set <host> <0-100>   connect, pair, set OLED Light
+///   TVControlForMac --osd-preview [options] ask the running app to show the OSD (see OsdTestRequest)
 enum CliMode {
     static var isRequested: Bool {
         let args = CommandLine.arguments
@@ -52,9 +53,22 @@ enum CliMode {
             return true
 
         case "--osd-preview":
-            // Asks a RUNNING TVControlForMac app to show the OSD preview (test/debug hook).
-            DistributedNotificationCenter.default().post(
-                name: .init("com.itsallexb.TVControlForMac.osd-preview"), object: nil)
+            // Asks a RUNNING TVControlForMac app to show the OSD (test/debug hook). With no
+            // options it shows the regular Preview (the active TV, its current settings);
+            // options turn it into a scripted OSD test that bypasses TVs and settings.
+            let options = Array(args.dropFirst(2))
+            if options.isEmpty {
+                DistributedNotificationCenter.default().post(
+                    name: .init("com.itsallexb.TVControlForMac.osd-preview"), object: nil)
+            } else {
+                guard let request = OsdTestRequest(arguments: options) else {
+                    print(OsdTestRequest.usage)
+                    return true
+                }
+                DistributedNotificationCenter.default().postNotificationName(
+                    OsdTestRequest.notification, object: nil, userInfo: request.userInfo,
+                    deliverImmediately: true)
+            }
             try? await Task.sleep(nanoseconds: 300_000_000) // let the notification deliver
             print("preview requested")
             return true
