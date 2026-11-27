@@ -18,7 +18,7 @@ struct MenuBarView: View {
                     Spacer()
                     Button("Fix…") {
                         state.page = .home
-                        (NSApp.delegate as? AppDelegate)?.showMainWindow()
+                        AppDelegate.shared?.showMainWindow()
                     }
                     .controlSize(.mini)
                 }
@@ -42,7 +42,7 @@ struct MenuBarView: View {
 
             HStack {
                 Button("Open \(AppInfo.name)") {
-                    (NSApp.delegate as? AppDelegate)?.showMainWindow()
+                    AppDelegate.shared?.showMainWindow()
                 }
                 Spacer()
                 Button("Quit") {
@@ -75,7 +75,7 @@ private struct MenuBarTvRow: View {
                         .help("Automation is paused while its display isn't connected")
                 }
                 Spacer()
-                Text(tv.supportsBrightness ? "\(tv.backlight)%" : note)
+                Text(hasSlider ? "\(tv.backlight)%" : note)
                     .font(.system(size: 11, weight: .medium))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -89,7 +89,7 @@ private struct MenuBarTvRow: View {
                 .help("Turn on or off")
                 .accessibilityLabel("Turn \(tv.name) on or off")
             }
-            if tv.supportsBrightness {
+            if hasSlider {
                 HStack(spacing: 8) {
                     Image(systemName: "sun.min")
                         .font(.system(size: 10))
@@ -109,9 +109,11 @@ private struct MenuBarTvRow: View {
         .padding(.vertical, 2)
     }
 
+    private var hasSlider: Bool { tv.showsSlider }
+
     // What stands in for the percentage on a TV without a slider.
     private var note: String {
-        if tv.showsPairing { return "Not paired" }
+        if tv.showsPairing || tv.status == .awaitingPairing { return "Not paired" }
         if tv.isPowerOnly { return "Power only" }
         return tv.isConnected ? "" : tv.statusText
     }

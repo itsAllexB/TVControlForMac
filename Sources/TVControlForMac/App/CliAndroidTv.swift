@@ -333,6 +333,7 @@ private enum AtvSelfTest {
         identities(made)
         await tlsLoopback()
         await fakeTvScenario()
+        await refusalCountScenario()
         if slow { await silentTvScenario() }
         print("\(passed) passed, \(failed) failed")
         if failed > 0 { exit(1) }
@@ -805,6 +806,41 @@ private enum AtvSelfTest {
         }
     }
 
+    /// Two refusals with the TV out of reach between them (one odd handshake, then days of
+    /// the TV being away) mustn't add up to "Needs pairing again".
+    private static func refusalCountScenario() async {
+        guard let (credential, pfx) = try? AndroidTvIdentity.createClientCertificate() else { return }
+        let device = TvDevice(name: "Fake", host: "127.0.0.1", kind: .androidTv)
+        device.clientCertificate = pfx
+        let controller = AndroidTvController(device: device)
+        defer { controller.dispose() }
+        let log = StatusLog()
+        controller.onStatusChanged = { log.add($0, $1) }
+
+        await checkAsync("refusals: one, then the TV out of reach, then one more keeps the pairing") {
+            let first = try await FakeTv.start()
+            first.trust(credential.certificateDer, on: true)
+            controller.start()
+            guard await log.waitFor(.connected) else { first.stop(); return false }
+            first.rejectAll = true
+            first.dropConnections()
+            // The drop is a plain close; the reconnect after it is the first refusal.
+            let dropped = await log.waitFor(.disconnected, "Reconnecting")
+            let refused = await log.waitFor(.disconnected, "Reconnecting") && dropped
+            first.stop() // gone from the network: the next attempts are refused at TCP
+            let away = await log.waitFor(.disconnected, "Can't reach the TV", timeout: 10)
+
+            let second = try await FakeTv.start()
+            defer { second.stop() }
+            second.rejectAll = true
+            let refusedAgain = await log.waitFor(.disconnected, "Reconnecting", timeout: 20)
+            let kept = !device.clientCertificate.isEmpty
+            // Two in a row from here on do count.
+            let unpaired = await log.waitFor(.needsPairing, "Needs pairing again", timeout: 20)
+            return refused && away && refusedAgain && kept && unpaired && device.clientCertificate.isEmpty
+        }
+    }
+
     /// A TV that goes quiet with the connection still open (it lost power, or fell off Wi-Fi):
     /// the power key must go out once and not be pressed again blindly, and 20 s of silence
     /// must end the connection. Takes about a minute, so only with `--atv-selftest slow`.
@@ -919,7 +955,8 @@ private enum AtvSelfTest {
 /// A stand-in Google TV on 127.0.0.1: the pairing port shows (records) a code and checks the
 /// secret the way a TV does; the remote port accepts only the certificate it paired with,
 /// introduces itself, pings every second, reports power and toggles it on KEYCODE_POWER.
-private final class FakeTv: @unchecked Sendable {
+/// Diagnostics only: used by `--atv-selftest` and by `--fake-tv` (`CliFakeTv`).
+final class FakeTv: @unchecked Sendable {
     private let server: AndroidTvCredential
     private let queue = DispatchQueue(label: "selftest.faketv")
     private let lock = NSLock()
@@ -939,7 +976,23 @@ private final class FakeTv: @unchecked Sendable {
     private var reject = false
     private var report = true
     private var mute = false
+    private var vendorName = "FakeVendor"
+    private var modelName = "FakeModel"
 
+    /// What the TV says about itself in the remote handshake; "TCL" makes the app offer
+    /// brightness setup.
+    var vendor: String {
+        get { lock.withLock { vendorName } }
+        set { lock.withLock { vendorName = newValue } }
+    }
+    var model: String {
+        get { lock.withLock { modelName } }
+        set { lock.withLock { modelName = newValue } }
+    }
+
+    /// Told what happens (a code shown, a key pressed, a certificate refused), for `--fake-tv`
+    /// to print. Set before `start`'s listeners see traffic; called on the TV's queue.
+    var onEvent: ((String) -> Void)?
     var displayedCode: String? { lock.withLock { code } }
     var pairedCertificate: [UInt8]? { lock.withLock { paired } }
     var clientName: String? { lock.withLock { name } }
@@ -987,6 +1040,22 @@ private final class FakeTv: @unchecked Sendable {
         conns.forEach { $0.cancel() }
     }
 
+    /// Goes to standby or comes back, and says so on every open remote connection.
+    func setPower(on: Bool) {
+        let conns: [NWConnection] = lock.withLock {
+            self.on = on
+            return remoteConnections
+        }
+        conns.forEach { reportPowerState($0) }
+    }
+
+    /// Forgets the paired certificate, as a TV does when its remotes are cleared, and drops
+    /// the connections that used it.
+    func forget() {
+        lock.withLock { paired = nil }
+        dropConnections()
+    }
+
     func dropConnections() {
         let conns: [NWConnection] = lock.withLock {
             defer { remoteConnections.removeAll() }
@@ -1008,6 +1077,7 @@ private final class FakeTv: @unchecked Sendable {
                 if !remote { self.lastClientCertificate = der; return true }
                 return !self.reject && der != nil && der == self.paired
             }
+            if remote && !accept { self.onEvent?("refused a certificate it isn't paired with") }
             complete(accept)
         }, queue)
         let params = NWParameters(tls: tls)
@@ -1058,6 +1128,7 @@ private final class FakeTv: @unchecked Sendable {
                     self.paired = self.lastClientCertificate
                     return 200
                 }
+                self.onEvent?(status == 200 ? "paired" : "wrong pairing secret")
             }
             send(ProtoWriter().withVarint(1, 2).withVarint(2, status).bytes)
         }
@@ -1075,6 +1146,7 @@ private final class FakeTv: @unchecked Sendable {
             expectedSecret = hash
             code = ([hash[0]] + nonce).map { String(format: "%02X", $0) }.joined()
         }
+        if let shown = displayedCode { onEvent?("showing pairing code \(shown)") }
     }
 
     // MARK: Remote port
@@ -1083,10 +1155,12 @@ private final class FakeTv: @unchecked Sendable {
         lock.withLock { remoteConnections.append(connection) }
         connection.stateUpdateHandler = { [weak self] state in
             guard case .ready = state, let self else { return }
+            self.onEvent?("remote connection open")
             // remote_configure: the TV speaks first.
+            let (model, vendor) = self.lock.withLock { (self.modelName, self.vendorName) }
             self.send(connection, ProtoWriter().withMessage(1, ProtoWriter()
                 .withVarint(1, 622)
-                .withMessage(2, ProtoWriter().withString(1, "FakeModel").withString(2, "FakeVendor"))).bytes)
+                .withMessage(2, ProtoWriter().withString(1, model).withString(2, vendor))).bytes)
         }
         connection.start(queue: queue)
         receive(connection) { [weak self] message, send in
@@ -1104,10 +1178,12 @@ private final class FakeTv: @unchecked Sendable {
             } else if message.has(9) {
                 self.lock.withLock { self.pongCount += 1 }
             } else if let key = message.message(10), key.varint(1) == 26 {
-                self.lock.withLock {
+                let nowOn: Bool = self.lock.withLock {
                     self.keyCount += 1
                     self.on.toggle()
+                    return self.on
                 }
+                self.onEvent?("power key → \(nowOn ? "on" : "standby")")
                 self.queue.asyncAfter(deadline: .now() + 0.2) { self.reportPowerState(connection) }
             }
         }

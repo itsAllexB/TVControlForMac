@@ -125,7 +125,7 @@ private struct TvGroup: View {
     var body: some View {
         Section {
             header
-            if tv.supportsBrightness {
+            if tv.showsSlider {
                 brightnessRow
             }
             if tv.showsPairing {
@@ -241,7 +241,7 @@ private struct TvGroup: View {
         SettingRow("Pair with this TV",
                    subtitle: tv.awaitingCode ? nil : "The TV will show a code to type here") {
             if tv.awaitingCode {
-                TextField("Code", text: $tv.pairingCode)
+                TextField("Code", text: $tv.pairingCode, prompt: Text("Code"))
                     .textFieldStyle(.roundedBorder)
                     .labelsHidden()
                     .frame(width: 90)

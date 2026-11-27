@@ -20,7 +20,8 @@ final class AndroidTvController: TvController {
     private static let pairingStartTimeout: TimeInterval = 8
     private static let codeEntryTimeout: TimeInterval = 180
 
-    /// The TV must refuse our certificate this many times running before we believe it.
+    /// The TV must refuse our certificate this many times before we believe it, with no
+    /// attempt between that couldn't reach it at all.
     private static let rejectionsBeforeUnpairing = 2
 
     let device: TvDevice
@@ -184,10 +185,19 @@ final class AndroidTvController: TvController {
     private func handleConnectFailure(_ error: Error) {
         let atvError = error as? AndroidTvError
 
+        // A TV that couldn't be reached at all says nothing about our certificate, so the
+        // refusals start counting again. A plain close or any other failure neither counts
+        // nor resets: a TV refusing us can also surface as one, between real refusals.
+        if atvError?.isUnreachable == true {
+            gate.withLock { rejections = 0 }
+        }
+
         if atvError?.isCertificateRejected == true {
             // The TV was reset or had its paired remotes cleared. Don't re-pair on our own:
             // that would pop a code dialog on a TV nobody may be sitting at. And only believe
-            // it the second time running, so one odd handshake can't cost a working pairing.
+            // it the second time running (with nothing between but attempts that reached the
+            // TV), so one odd handshake, then days of the TV being away, then another, can't
+            // cost a working pairing.
             let unpair: Bool = gate.withLock {
                 rejections += 1
                 guard rejections >= Self.rejectionsBeforeUnpairing else { return false }
@@ -199,6 +209,9 @@ final class AndroidTvController: TvController {
                 Log.write("\(device.host): the TV no longer accepts our certificate — pairing again is needed")
                 device.clientCertificate = ""
                 onDeviceChanged?()
+                // Say so now: the loop only gets to pair() after its backoff, and until then
+                // the card would go on saying "Connecting…".
+                setStatus(.needsPairing, "Needs pairing again")
             } else {
                 Log.write("\(device.host): the TV refused our certificate (\(error.localizedDescription)); trying once more")
                 setStatus(.disconnected, "Reconnecting")

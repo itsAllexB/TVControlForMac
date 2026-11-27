@@ -62,7 +62,7 @@ struct MainView: View {
         }
         .toolbar { TitleBarHeightKeeper() }
         .onChange(of: state.page, initial: true) {
-            (NSApp.delegate as? AppDelegate)?.setWindowTitle(state.page.title)
+            AppDelegate.shared?.setWindowTitle(state.page.title)
         }
         .frame(minWidth: 760, minHeight: 500)
     }

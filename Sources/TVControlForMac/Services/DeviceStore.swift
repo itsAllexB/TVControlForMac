@@ -21,7 +21,9 @@ final class DeviceStore {
 
     func loadDevices() -> [TvDevice] {
         guard let data = try? Data(contentsOf: devicesURL) else { return [] }
-        return (try? JSONDecoder().decode([TvDevice].self, from: data)) ?? []
+        if let devices = try? JSONDecoder().decode([TvDevice].self, from: data) { return devices }
+        Self.keepUnreadable(devicesURL)
+        return []
     }
 
     func saveDevices(_ devices: [TvDevice]) {
@@ -33,7 +35,25 @@ final class DeviceStore {
 
     func loadSettings() -> AppSettings {
         guard let data = try? Data(contentsOf: settingsURL) else { return AppSettings() }
-        return (try? JSONDecoder().decode(AppSettings.self, from: data)) ?? AppSettings()
+        if let settings = try? JSONDecoder().decode(AppSettings.self, from: data) { return settings }
+        Self.keepUnreadable(settingsURL)
+        return AppSettings()
+    }
+
+    /// A file that's there but can't be read (cut short, edited by hand) loads as empty, and
+    /// the next save would replace it for good. So a copy is kept next to it first, as
+    /// "<name>.unreadable": one per file, the latest replacing an older one.
+    static func keepUnreadable(_ url: URL) {
+        let copy = url.appendingPathExtension("unreadable")
+        let files = FileManager.default
+        if files.contentsEqual(atPath: url.path, andPath: copy.path) { return } // kept already
+        try? files.removeItem(at: copy)
+        do {
+            try files.copyItem(at: url, to: copy)
+            Log.write("\(url.lastPathComponent) can't be read; starting without it, a copy is in \(copy.lastPathComponent)")
+        } catch {
+            Log.write("\(url.lastPathComponent) can't be read, and keeping a copy failed: \(error.localizedDescription)")
+        }
     }
 
     func saveSettings(_ settings: AppSettings) {
@@ -53,14 +73,13 @@ final class DeviceStore {
     /// Parses a backup string; throws if the file isn't a valid TVControlForMac /
     /// TVControlForWin backup.
     func deserializeBackup(_ json: String) throws -> BackupData {
-        var data = try JSONDecoder().decode(BackupData.self, from: Data(json.utf8))
+        let data = try JSONDecoder().decode(BackupData.self, from: Data(json.utf8))
         // Importing replaces everything: a JSON file picked by mistake mustn't read as an
-        // empty backup.
-        guard data.devices != nil || data.settings != nil else {
+        // empty backup. Both apps always write both sections, so a file missing either
+        // isn't one; a settings-only file would otherwise remove every TV and its pairing.
+        guard data.devices != nil && data.settings != nil else {
             throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Not a settings backup."))
         }
-        data.devices = data.devices ?? []
-        data.settings = data.settings ?? AppSettings()
         return data
     }
 }

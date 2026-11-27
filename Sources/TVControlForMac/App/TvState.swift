@@ -176,6 +176,11 @@ final class TvState: Identifiable {
 
     /// The pairing strip shows while the TV isn't paired or is waiting for its code.
     var showsPairing: Bool { status == .needsPairing || status == .awaitingCode }
+
+    /// The brightness slider shows once it can act: not while the TV still has to be paired
+    /// (an LG showing its accept prompt, a Google TV that needs pairing again), when the
+    /// value would only be a default the TV never reported, and nothing would reach it.
+    var showsSlider: Bool { supportsBrightness && !showsPairing && status != .awaitingPairing }
     var awaitingCode: Bool { status == .awaitingCode }
 
     /// Asks the TV to show its pairing code. Called for a just-added TV and by the Pair button.

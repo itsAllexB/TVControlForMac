@@ -153,9 +153,10 @@ enum UpdateCli {
         expect(AppInfo.compareVersions("3.0.0", "3.0.1") == .orderedAscending, "3.0.0 < 3.0.1")
         expect(AppInfo.parseVersion("v3.1.0") == "3.1.0", "tag v3.1.0")
         expect(AppInfo.parseVersion(" 3.1 ") == "3.1.0", "tag 3.1 -> 3.1.0")
-        expect(AppInfo.parseVersion("3.1.0-beta.2") == "3.1.0", "tag 3.1.0-beta.2 -> 3.1.0")
         expect(AppInfo.parseVersion("3.0.1.7") == "3.0.1", "tag 3.0.1.7 -> 3.0.1")
-        for bad in ["3", "latest", "", "3..1", "3.x.1", "3.0.1.2.5", "+3.0"] {
+        // A suffixed tag is a pre-release or a build, whether or not GitHub was told so.
+        for bad in ["3", "latest", "", "3..1", "3.x.1", "3.0.1.2.5", "+3.0",
+                    "3.1.0-beta.2", "v3.1.0-beta", "3.1.0-rc1", "3.1.0+build.5", "3.1-"] {
             expect(AppInfo.parseVersion(bad) == nil, "tag \"\(bad)\" is not a version")
         }
         expect(UpdateService.archiveVersion("TVControlForMac-3.0.1.zip") == "3.0.1", "file name version")
@@ -227,6 +228,9 @@ enum UpdateCli {
         expect(UpdateService.parse(release: release(extra: ["prerelease": true]), trust: github) == nil, "pre-release is ignored")
         expect(UpdateService.parse(release: release(extra: ["draft": 1]), trust: github) != nil, "only JSON true marks a draft")
         expect(UpdateService.parse(release: release(tag: "nightly"), trust: github) == nil, "tag that isn't a version is ignored")
+        expect(UpdateService.parse(release: release(tag: "v3.0.1-beta",
+                                                    assets: [asset(name: "TVControlForMac-3.0.1.zip")]), trust: github) == nil,
+               "a beta tag not marked as a pre-release is ignored, not offered as 3.0.1")
         expect(UpdateService.parse(release: release(tag: 301), trust: github) == nil, "numeric tag is ignored")
         let evilPage = UpdateService.parse(release: release(extra: ["html_url": "https://evil.example/x"]), trust: github)
         expect(evilPage?.pageURL.absoluteString == AppInfo.releasesPage, "a non-GitHub page falls back to the releases page")

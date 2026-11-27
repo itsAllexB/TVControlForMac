@@ -65,6 +65,12 @@ enum SelfTestCli {
         check("catch-up: the gap is (from, to]: ending on a schedule's minute counts, starting on it doesn't",
               RuleTargets.anyFires([morning], between: date(27, 7, 0), and: date(27, 8, 0))
               && !RuleTargets.anyFires([morning], between: date(27, 8, 0), and: date(27, 9, 0)))
+        // Ticks 61 s apart can straddle a whole minute (07:59:59.5 → 08:01:00.5): such a gap
+        // has to be one the service checks.
+        let straddle = date(27, 7, 59).addingTimeInterval(59.5)
+        check("catch-up: a 61 s pause over a schedule's whole minute is caught",
+              straddle.addingTimeInterval(61).timeIntervalSince(straddle) > ScheduleService.gapThreshold
+              && RuleTargets.anyFires([morning], between: straddle, and: straddle.addingTimeInterval(61)))
         check("catch-up: a TV isn't touched because of another TV's schedule",
               RuleTargets.catchUpBrightness(all, tvId: "b", from: date(27, 21, 0), to: date(27, 22, 0)) == nil)
         check("catch-up: the TV it targets gets the value now in effect",
@@ -216,6 +222,25 @@ enum SelfTestCli {
         // object with neither "Devices" nor "Settings") must not count as an empty backup.
         check("files: a JSON object with neither Devices nor Settings is refused",
               (try? store.deserializeBackup(#"{ "name": "something else", "version": 1 }"#)) == nil)
+        // Every real backup has both sections; one without the TVs would remove them all.
+        check("files: a settings-only file is refused",
+              (try? store.deserializeBackup(#"{ "Settings": { "HotkeyStep": 5 } }"#)) == nil)
+        check("files: a devices-only file is refused",
+              (try? store.deserializeBackup(#"{ "Devices": [] }"#)) == nil)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("tvcontrol-selftest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let broken = folder.appendingPathComponent("devices.json")
+        try? Data(#"[{ "Name": "cut sh"#.utf8).write(to: broken)
+        DeviceStore.keepUnreadable(broken)
+        try? Data("second".utf8).write(to: broken)
+        DeviceStore.keepUnreadable(broken)
+        let copies = (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.filter { $0 != "devices.json" }
+        let kept = try? String(contentsOf: broken.appendingPathExtension("unreadable"), encoding: .utf8)
+        check("files: an unreadable file is kept as one .unreadable copy, the latest",
+              copies == ["devices.json.unreadable"] && kept == "second")
+        try? FileManager.default.removeItem(at: folder)
+        check("files: a backup with no TVs in it still imports",
+              (try? store.deserializeBackup(#"{ "Devices": [], "Settings": {} }"#))?.devices?.isEmpty == true)
     }
 
     // Files as LGforMac 1.0 wrote them: what the first launch after the rename copies over

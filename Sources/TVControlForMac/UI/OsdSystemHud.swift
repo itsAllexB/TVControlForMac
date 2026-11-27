@@ -165,9 +165,7 @@ final class OsdSystemHud {
         }
 
         hideTimer?.invalidate()
-        hideTimer = Timer.scheduledTimer(withTimeInterval: max(0.5, min(5.0, timeout)), repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.runExit() }
-        }
+        hideTimer = OsdController.mainTimer(after: max(0.5, min(5.0, timeout))) { [weak self] in self?.runExit() }
     }
 
     /// Hides at once (no exit animation), e.g. when the other OSD style takes over.

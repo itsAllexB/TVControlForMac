@@ -46,7 +46,7 @@ final class AppState {
             change(&self.settings)
             self.saveSettings()
         },
-        isMainWindowOpen: { (NSApp.delegate as? AppDelegate)?.isMainWindowVisible ?? false },
+        isMainWindowOpen: { AppDelegate.shared?.isMainWindowVisible ?? false },
         // Quitting fires no power rules (only the Mac shutting down does), so an update
         // never switches the TVs off.
         quitForUpdate: { NSApp.terminate(nil) })
@@ -590,9 +590,11 @@ final class AppState {
     // Schedule catch-up when a TV's brightness first becomes usable this session: the
     // schedule in effect for that TV now, or nil when catch-up is off or no schedule
     // targets it. A TV whose automation is paused holds it for display-reconnect instead;
-    // its user isn't looking at it right now.
+    // its user isn't looking at it right now. Not after an update: the app only blinked,
+    // and a brightness changed since the last schedule ran should stay (as "turn on when
+    // the app starts" is skipped then too).
     private func startupBrightness(for device: TvDevice) -> Int? {
-        guard settings.applyScheduleOnStartup,
+        guard settings.applyScheduleOnStartup, !AppInfo.launchedAfterUpdate,
               let value = RuleTargets.scheduledBrightness(settings.schedules, tvId: device.id) else { return nil }
         if let tv = tvs.first(where: { $0.device === device }), !tv.automationAllowed {
             tv.missedScheduleWhileDisconnected = true
@@ -647,12 +649,13 @@ final class AppState {
     }
 
     /// A schedule's TV picker only appears with at least two TVs that can be dimmed. The
-    /// one exception: a schedule that names TVs none of which can be dimmed right now (say
-    /// a Google TV that lost brightness control) keeps it, or it would silently do nothing
-    /// with no way to see why.
+    /// one exception: a schedule that names a TV that can't be dimmed right now (say a
+    /// Google TV that lost brightness control) keeps it. Otherwise one naming only that TV
+    /// would silently do nothing with no way to see why, and one naming it next to a TV
+    /// that works would hold a tick nobody can see or take off.
     func showsTargetPicker(for schedule: BrightnessSchedule) -> Bool {
         let dimmable = tvs.filter(\.supportsBrightness).map(\.id)
-        let stranded = !schedule.tvIds.isEmpty && !schedule.tvIds.contains(where: dimmable.contains)
+        let stranded = schedule.tvIds.contains { !dimmable.contains($0) }
         return dimmable.count >= 2 || stranded
     }
 

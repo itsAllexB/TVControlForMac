@@ -114,6 +114,7 @@ swift build
 | `--update-verify <zip> <version>` | Runs the updater's checks on a release zip |
 | `--update-download` | Downloads and checks the latest release (trial runs only) |
 | `--selftest`, `--atv-selftest`, `--adb-selftest`, `--update-selftest` | Offline self-tests; no TV or network needed |
+| `--fake-tv [options]` | Stand-in TVs on 127.0.0.1 for trying the app's screens: a Google TV (6466/6467) with a TCL-style `adbd` (5555), and with `lg` an LG (3000). Commands typed on its stdin (`standby`, `wake`, `drop`, `forget`, `adb-forget`, `status`…) change what it does; `CliFakeTv.swift` lists them all |
 
 An option the binary doesn't know is refused, so a typo never starts the app.
 
@@ -249,7 +250,7 @@ Source paths are under `Sources/TVControlForMac/`.
 | `App/TVControlForMacApp.swift` | Start-up, single instance, the menu bar item, the window |
 | `App/AppState.swift`, `TvState.swift` | What the UI shows and does, for the app and for each TV |
 | `App/UpdateManager.swift` | When to check for updates, and installing them |
-| `App/CliMode.swift`, `CliAndroidTv.swift`, `CliAdb.swift`, `CliUpdate.swift`, `CliSelfTest.swift` | The command-line diagnostics and self-tests |
+| `App/CliMode.swift`, `CliAndroidTv.swift`, `CliAdb.swift`, `CliUpdate.swift`, `CliSelfTest.swift`, `CliFakeTv.swift` | The command-line diagnostics, self-tests and stand-in TVs |
 | `UI/` | The window and its six pages, the menu bar pop-up, the on-screen display, Identify Displays, shared rows and the "i" button (`Components.swift`), the updates section |
 | `Support/Info.plist`, `Support/AppIcon.icns` | The bundle's settings, and the app icon (designed art, committed as is) |
 | `build.sh` | Build script |
