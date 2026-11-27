@@ -17,7 +17,7 @@ enum CliMode {
     }
 
     /// Flags the app itself takes when it's launched normally.
-    private static let appFlags: Set<String> = ["--page", AppInfo.updatedArg]
+    private static let appFlags: Set<String> = ["--page", AppInfo.updatedArg, AppInfo.backgroundArg]
 
     private static func isKnown(_ flag: String) -> Bool {
         ["--scan", "--probe", "--set", "--mac", "--raw", "--osd-preview"].contains(flag)

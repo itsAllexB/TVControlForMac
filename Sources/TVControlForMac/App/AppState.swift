@@ -37,8 +37,20 @@ final class AppState {
     /// The page the main window shows.
     var page: AppPage = .home
 
-    /// True when a downloaded update is waiting for the user (the dot on Settings).
-    var updateReady: Bool { false }
+    /// App updates: the Settings page's "Updates" section and the daily check.
+    @ObservationIgnored private(set) lazy var updates = UpdateManager(
+        settings: { [unowned self] in self.settings },
+        modifySettings: { [unowned self] change in
+            change(&self.settings)
+            self.saveSettings()
+        },
+        isMainWindowOpen: { (NSApp.delegate as? AppDelegate)?.isMainWindowVisible ?? false },
+        // Quitting fires no power rules (only the Mac shutting down does), so an update
+        // never switches the TVs off.
+        quitForUpdate: { NSApp.terminate(nil) })
+
+    /// True when an update is waiting for the user (the dot on Settings).
+    var updateReady: Bool { updates.hasUpdate }
 
     // Background services (started once from the app delegate).
     @ObservationIgnored let hotkeys = HotkeyService()
@@ -87,6 +99,8 @@ final class AppState {
         // that's off has no HDMI link, so a live sample would always say "absent").
         wirePowerAutomation(afterUpdate: afterUpdate)
         startDisplayTracking()
+
+        updates.start()
 
         // Hidden test/debug hook: `--osd-preview` posts this distributed notification so
         // the OSD can be exercised without clicking through the UI.
@@ -760,6 +774,7 @@ final class AppState {
         applyTheme()
         hotkeys.update(modifiers: settings.hotkeyModifiers)
         updateDisplayPresence()
+        updates.settingsReloaded()
     }
 
     func persist() {
@@ -776,6 +791,7 @@ final class AppState {
             NotificationCenter.default.removeObserver(screenObserver)
             self.screenObserver = nil
         }
+        updates.dispose()
         powerEvents.dispose()
         hotkeys.dispose()
         scheduleService.dispose()

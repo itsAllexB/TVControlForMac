@@ -59,17 +59,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             quitLegacyApp()
         }
 
-        let arguments = CommandLine.arguments
-        let afterUpdate = arguments.contains(AppInfo.updatedArg)
-
         let state = AppState.shared
-        if let page = Self.requestedPage(arguments) { state.page = page }
-        state.start(afterUpdate: afterUpdate)
+        if let page = Self.requestedPage(CommandLine.arguments) { state.page = page }
+        state.start(afterUpdate: AppInfo.launchedAfterUpdate)
         started = true
 
         // Opening the app yourself always shows the window; the launch preference applies
-        // only to the at-login launch.
-        let behavior = AutostartService.isAutostartLaunch ? state.settings.launchBehavior : 0
+        // only to the at-login launch. Coming back from an update that went in unattended,
+        // the app returns to the background it was in.
+        let behavior = AppInfo.launchedInBackground ? 2
+            : AutostartService.isAutostartLaunch ? state.settings.launchBehavior : 0
         switch behavior {
         case 2:
             break // in the background: stays an accessory (no window, no Dock icon)
@@ -170,6 +169,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
         NSApp.setActivationPolicy(.accessory)
+        // A downloaded update waits for the window to be out of the way.
+        AppState.shared.updates.windowClosed()
         return false
     }
 }

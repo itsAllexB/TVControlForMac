@@ -375,6 +375,8 @@ struct SettingsView: View {
                     Button("Import…") { importBackup() }
                 }
             }
+
+            UpdatesSection(updates: state.updates)
         }
         .alert(item: $dialogMessage) { message in
             Alert(title: Text(message.title), message: Text(message.text), dismissButton: .default(Text("OK")))
