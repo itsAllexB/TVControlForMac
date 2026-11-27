@@ -41,6 +41,7 @@ final class AdbBrightness: @unchecked Sendable {
     private var debounceItem: DispatchWorkItem?
     private var pendingValue = 0
     private var hasPending = false
+    private var writing = false        // a value taken from `pending` is still on its way
     private var disposed = false
     private var work: [UInt64: Task<Void, Never>] = [:]
     private var nextWorkId: UInt64 = 0
@@ -277,6 +278,7 @@ final class AdbBrightness: @unchecked Sendable {
 
     private func flush() async {
         guard let value = takePending() else { return }
+        defer { gate.withLock { writing = false } }
 
         if state != .ready {
             // Set up, but not usable at the moment (typically the TV hasn't been reachable since
@@ -425,7 +427,11 @@ final class AdbBrightness: @unchecked Sendable {
 
         // Report what the TV is at before announcing ready: becoming ready is what triggers the
         // schedule catch-up, and its value has to be the one that sticks, not this reading.
-        if let current = try await AdbTclBacklight.get(adb, until: deadline) {
+        // Nor while a newer value is held, queued or being written: the TV reporting power
+        // on after a reconnect hands a held value over before this read, and the slider
+        // would otherwise go back to what the TV had while the TV gets the new value.
+        if let current = try await AdbTclBacklight.get(adb, until: deadline),
+           !gate.withLock({ hasPending || writing || missedWhileOff != nil }) {
             onReported?(current)
         }
         setState(.ready)
@@ -530,6 +536,7 @@ final class AdbBrightness: @unchecked Sendable {
         gate.lock(); defer { gate.unlock() }
         guard hasPending else { return nil }
         hasPending = false
+        writing = true
         return pendingValue
     }
 
