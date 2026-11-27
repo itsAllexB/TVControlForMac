@@ -108,7 +108,7 @@ final class AppState {
         // Hidden test/debug hook: `--osd-preview` posts this distributed notification so
         // the OSD can be exercised without clicking through the UI.
         DistributedNotificationCenter.default().addObserver(
-            forName: .init("\(AppInfo.bundleIdentifier).osd-preview"), object: nil, queue: .main
+            forName: .init("\(AppInfo.bundleIdentifier).osd-preview"), object: AppPaths.instanceTag, queue: .main
         ) { _ in
             Task { @MainActor in AppState.shared.previewOsd() }
         }

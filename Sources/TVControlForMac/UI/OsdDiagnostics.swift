@@ -94,7 +94,7 @@ extension OsdController {
     /// Listens for `OsdTestRequest`s. Diagnostics only: it shows an OSD and changes nothing else.
     func installTestHook() {
         DistributedNotificationCenter.default().addObserver(
-            forName: OsdTestRequest.notification, object: nil, queue: .main
+            forName: OsdTestRequest.notification, object: AppPaths.instanceTag, queue: .main
         ) { [weak self] note in
             guard let request = OsdTestRequest(userInfo: note.userInfo) else { return }
             Task { @MainActor in self?.runTest(request) }

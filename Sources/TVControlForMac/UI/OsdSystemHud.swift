@@ -31,26 +31,32 @@ enum OsdSystemHudMetrics {
     /// the symbol's layout box, is what the system centres.
     static let glyphPointSize: CGFloat = 21
     static let glyphCentreX: CGFloat = 30.75
-    /// Level indicator: 16 segments in a 214 × 4 track starting 62.5 pt in, the whole track
-    /// rounded only at its outer ends. Each 1 pt gap sits at the start of cells 2–16, so the
-    /// first segment is 1 pt wider than the rest (13.375 vs 12.375), exactly as measured.
+    /// Level indicator: a 4 pt high track starting 62.5 pt in, the whole track rounded only
+    /// at its outer ends. Each 1 pt gap sits at the start of every cell but the first, so
+    /// the first segment is 1 pt wider than the rest, as in the system HUD.
+    ///
+    /// The one deliberate departure from the system HUD: it has 16 segments (its keys move
+    /// in sixteenths), this has 10, one per 10 %, so the usual 10 % steps fill whole
+    /// segments instead of stopping part-way through one. The track is 215 pt rather than
+    /// the measured 214 so each cell is 21.5 pt and its edges land on whole pixels at 2x.
     static let trackX: CGFloat = 62.5
-    static let trackWidth: CGFloat = 214
+    static let trackWidth: CGFloat = 215
     static let trackHeight: CGFloat = 4
-    static let segments = 16
+    static let segments = 10
     static let segmentGap: CGFloat = 1
     /// Unfilled segments are white at 25 % (196 over the 176 glass on a light desktop).
     static let emptyOpacity: Double = 0.25
-    /// Right inset after the track (308 − 62.5 − 214).
-    static let trackTrailingInset: CGFloat = 31.5
+    /// Right inset after the track (308 − 62.5 − 215).
+    static let trackTrailingInset: CGFloat = 30.5
 
     // The percentage is this app's addition (the system HUD has no number). It takes the
     // trailing end of the row: the track gives up room for it and still ends on whole
-    // points per segment (176 pt, 11 pt each), so the segments stay crisp.
+    // pixels per segment (175 pt, 17.5 pt each), so the segments stay crisp.
+    // 62.5 + 175 + 11 + 37 + 22.5 = 308.
     static let valueTrailingInset: CGFloat = 22.5
     static let valueWidth: CGFloat = 37
-    static let valueGap: CGFloat = 10
-    static let trackWidthWithValue: CGFloat = 176
+    static let valueGap: CGFloat = 11
+    static let trackWidthWithValue: CGFloat = 175
 }
 
 /// Measured motion of the system HUD (macOS 27.3, 60 fps recordings).
@@ -615,8 +621,8 @@ enum OsdSymbolInk {
     }
 }
 
-/// The 16-segment level indicator ("chiclets"), partially filling the segment the level
-/// ends in, like the system HUD's quarter steps.
+/// The segmented level indicator ("chiclets"): one segment per 10 %, partially filling the
+/// segment the level ends in when it isn't a multiple of 10.
 struct OsdLevelIndicator: View {
     var level: Double
 

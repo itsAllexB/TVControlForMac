@@ -27,6 +27,15 @@ enum AppPaths {
     /// login item alone, doesn't check for updates by itself, and isn't single-instance.
     static var isTrialRun: Bool { overrideDir != nil }
 
+    /// Names this copy's data folder without creating it. Requests sent between processes
+    /// (`--osd-preview`) carry it, so a trial run and the installed app, which share a
+    /// bundle identifier, don't answer each other's.
+    static var instanceTag: String {
+        if let custom = overrideDir { return custom.path }
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return support.appendingPathComponent(folder).standardizedFileURL.path
+    }
+
     private static func resolve() -> URL {
         let files = FileManager.default
         if let custom = overrideDir {

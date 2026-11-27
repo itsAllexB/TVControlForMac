@@ -73,20 +73,21 @@ enum CliMode {
             return true
 
         case "--osd-preview":
-            // Asks a RUNNING TVControlForMac app to show the OSD (test/debug hook). With no
+            // Asks a RUNNING TVControlForMac app to show the OSD (test/debug hook): the one on
+            // the same data folder, so a trial run and the installed app stay apart. With no
             // options it shows the regular Preview (the active TV, its current settings);
             // options turn it into a scripted OSD test that bypasses TVs and settings.
             let options = Array(args.dropFirst(2))
             if options.isEmpty {
                 DistributedNotificationCenter.default().post(
-                    name: .init("com.itsallexb.TVControlForMac.osd-preview"), object: nil)
+                    name: .init("\(AppInfo.bundleIdentifier).osd-preview"), object: AppPaths.instanceTag)
             } else {
                 guard let request = OsdTestRequest(arguments: options) else {
                     print(OsdTestRequest.usage)
                     return true
                 }
                 DistributedNotificationCenter.default().postNotificationName(
-                    OsdTestRequest.notification, object: nil, userInfo: request.userInfo,
+                    OsdTestRequest.notification, object: AppPaths.instanceTag, userInfo: request.userInfo,
                     deliverImmediately: true)
             }
             try? await Task.sleep(nanoseconds: 300_000_000) // let the notification deliver

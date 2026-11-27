@@ -60,9 +60,10 @@ Ideas and next steps after **v3.0**.
 ## On-screen display: the macOS style
 
 Redrawn in 3.0 to the system volume pop-up's measured geometry on macOS 27 (a 308 × 66 pt
-Liquid Glass capsule with 16 segments, hanging below the menu bar), with its entrance and
-exit timed against screen recordings. Each style now keeps its own panel, which is what
-fixed the pop-up sometimes appearing empty.
+Liquid Glass capsule hanging below the menu bar), with its entrance and exit timed against
+screen recordings. The level has 10 segments, one per 10 %, where the system's has 16: on
+purpose, so 10 % steps fill whole segments. Each style now keeps its own panel, which is
+what fixed the pop-up sometimes appearing empty.
 
 - [x] Tone, metrics, the segmented level and the animation match the system pop-up over
       neutral backgrounds (within a few levels per pixel).
