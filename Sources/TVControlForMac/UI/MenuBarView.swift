@@ -109,12 +109,11 @@ private struct MenuBarTvRow: View {
         .padding(.vertical, 2)
     }
 
-    // As on the Home page: no slider while the TV wants pairing (again).
-    private var hasSlider: Bool { tv.supportsBrightness && !tv.showsPairing }
+    private var hasSlider: Bool { tv.showsSlider }
 
     // What stands in for the percentage on a TV without a slider.
     private var note: String {
-        if tv.showsPairing { return "Not paired" }
+        if tv.showsPairing || tv.status == .awaitingPairing { return "Not paired" }
         if tv.isPowerOnly { return "Power only" }
         return tv.isConnected ? "" : tv.statusText
     }
