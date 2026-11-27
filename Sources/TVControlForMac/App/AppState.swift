@@ -46,7 +46,7 @@ final class AppState {
             change(&self.settings)
             self.saveSettings()
         },
-        isMainWindowOpen: { (NSApp.delegate as? AppDelegate)?.isMainWindowVisible ?? false },
+        isMainWindowOpen: { AppDelegate.shared?.isMainWindowVisible ?? false },
         // Quitting fires no power rules (only the Mac shutting down does), so an update
         // never switches the TVs off.
         quitForUpdate: { NSApp.terminate(nil) })

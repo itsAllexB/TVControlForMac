@@ -40,7 +40,16 @@ struct TVControlForMacApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// This app's delegate. Not `NSApp.delegate`: with the SwiftUI app lifecycle that's
+    /// SwiftUI's own object, which only forwards to this one, so casting it finds nothing.
+    private(set) static var shared: AppDelegate?
+
     private var windowController: MainWindowController?
+
+    override init() {
+        super.init()
+        Self.shared = self
+    }
     /// Set once services are running; a duplicate instance that terminates early must NOT
     /// run the shutdown path (its fresh AppState would overwrite the primary's state files).
     private var started = false

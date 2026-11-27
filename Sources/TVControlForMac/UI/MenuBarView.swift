@@ -18,7 +18,7 @@ struct MenuBarView: View {
                     Spacer()
                     Button("Fix…") {
                         state.page = .home
-                        (NSApp.delegate as? AppDelegate)?.showMainWindow()
+                        AppDelegate.shared?.showMainWindow()
                     }
                     .controlSize(.mini)
                 }
@@ -42,7 +42,7 @@ struct MenuBarView: View {
 
             HStack {
                 Button("Open \(AppInfo.name)") {
-                    (NSApp.delegate as? AppDelegate)?.showMainWindow()
+                    AppDelegate.shared?.showMainWindow()
                 }
                 Spacer()
                 Button("Quit") {
