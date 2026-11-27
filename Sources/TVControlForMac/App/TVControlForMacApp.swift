@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set once services are running; a duplicate instance that terminates early must NOT
     /// run the shutdown path (its fresh AppState would overwrite the primary's state files).
     private var started = false
+    private var legacyAppObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // An instance pointed at its own data folder is a separate app as far as this
@@ -86,6 +87,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func quitLegacyApp() {
         for app in NSRunningApplication.runningApplications(withBundleIdentifier: AppInfo.legacyBundleIdentifier) {
             Log.write("startup: asking the old LGforMac (pid \(app.processIdentifier)) to quit")
+            app.terminate()
+        }
+
+        // The old app may still be a login item and start after this one, so keep watching.
+        legacyAppObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didLaunchApplicationNotification, object: nil, queue: .main
+        ) { notification in
+            guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                  app.bundleIdentifier == AppInfo.legacyBundleIdentifier else { return }
+            Log.write("the old LGforMac started (pid \(app.processIdentifier)); asking it to quit")
             app.terminate()
         }
     }
