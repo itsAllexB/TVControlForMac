@@ -53,28 +53,24 @@ Ideas and next steps after **v3.0**.
 - [ ] **Updates** end to end, from a real release: in-place install and the "Install" wait.
 - [ ] **Importing a TVControlForWin backup** with a Google TV in it.
 
-## On-screen display: make the macOS style truly native
+## On-screen display: the macOS style
 
-The macOS style is a real `NSGlassEffectView` capsule below the menu bar (name row,
-dotted track, sun icons, full-capsule corners), but it still doesn't pass for the system
-volume and brightness pop-up. Known gaps and leads:
+Redrawn in 3.0 to the system volume pop-up's measured geometry on macOS 27 (a 308 × 66 pt
+Liquid Glass capsule with 16 segments, hanging below the menu bar), with its entrance and
+exit timed against screen recordings. Each style now keeps its own panel, which is what
+fixed the pop-up sometimes appearing empty.
 
-- [ ] **Tone and contrast**: the system pop-up is a darker, luminance-adaptive glass with
-      a **white** fill in both appearances. Ours follows the app's appearance (`.primary`
-      content on plain `.regular` glass), so it renders light on light on bright
-      wallpapers. Leads: BetterDisplay ships "adaptive vs system appearance" glass styles
-      for exactly this reason (their adaptive style is limited to about 63 px height,
-      which suggests a constrained system variant). Look at `NSGlassEffectView` tinting, a
-      forced dark appearance on the panel, or private glass variants.
-- [ ] **Entrance and exit animation**: the system's spring and timing differ from our
-      linear slide and fade. Capture it (screen recording, frame by frame) and match.
-- [ ] **Exact metrics**: measure the real pop-up (width, insets, font, track thickness,
-      dot spacing, icon sizes, shadow) from 2x screenshots and match them.
-- [ ] **Slider knob**: check whether the system pop-up shows a knob at the fill edge.
-- [ ] Check whether the private `OSDManager` / `OSDUIHelper` path does anything useful on
-      macOS 26 and 27. In a normal app it summons the Control Center pop-up (per
-      MonitorControl), but the value bar reportedly doesn't follow. Retest from the app,
-      not a sandboxed command-line run, where the XPC lookup was denied.
+- [x] Tone, metrics, the segmented level and the animation match the system pop-up over
+      neutral backgrounds (within a few levels per pixel).
+- [x] The private `OSDManager` / `OSDUIHelper` route is a dead end: on macOS 27 it draws
+      the old square pop-up at the bottom of the screen, and the new capsule belongs to
+      `MenuBarAgent`, which needs entitlements an app like this can't have.
+- [ ] Over saturated colours the system boosts what's behind the glass more than ours
+      does, and bends it more while the pop-up scales in.
+- [ ] Check the sun glyph against the system's own brightness pop-up (needs BetterDisplay
+      or any other brightness-key app switched off while comparing).
+- [ ] Compare against the system pop-up with macOS in dark mode.
+- [ ] On macOS 14 and 15 it falls back to a dark material capsule; untested there.
 
 ## Updater hardening
 - [ ] Limit how much a release zip may unpack to, so a hostile release can't fill the disk
