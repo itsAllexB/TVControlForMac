@@ -54,7 +54,10 @@ Ideas and next steps after **v3.0**.
       and turn off), on when the displays wake.
 - [ ] **Launch at login**, including the "At login, show" choice.
 - [ ] **Schedules** firing on the minute, and catching up after sleep.
-- [ ] **Updates** end to end, from a real release: in-place install and the "Install" wait.
+- [x] **Updates** from a real release, unattended: 3.0.0 in Applications found 3.0.1, downloaded,
+      checked and installed it with the window closed, and came back connected (2026-11-27).
+- [ ] **Updates** with **Install automatically** off: the wait for **Install** in Settings,
+      from a real release (so far only rehearsed against a stand-in feed).
 - [ ] **Importing a TVControlForWin backup** with a Google TV in it.
 
 ## On-screen display: the macOS style
