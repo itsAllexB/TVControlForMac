@@ -100,8 +100,9 @@ You need macOS 14 Sonoma or newer, on Apple silicon or Intel.
 
 Coming from LGforMac? Install TVControlForMac and open it. Your TVs, pairing and settings
 carry over, **Launch at login** included, and an LGforMac that's still running is closed
-for you. You can then move LGforMac to the Trash. If it opened at login, also switch it
-off under **System Settings → General → Login Items**.
+for you. macOS asks about the local network again, because to it this is a new app. You
+can then move LGforMac to the Trash. If it opened at login, also switch it off under
+**System Settings → General → Login Items**.
 
 ## Set up your TV
 
@@ -124,7 +125,7 @@ TCL keeps brightness behind Android's debugging switch, so it needs turning on o
    seven times.
 2. Open **Settings → System → Developer options** and turn on **USB debugging**. (No USB
    cable involved. On a TV this switch also covers the network.)
-3. In the app, select **Set up** on the TV's card.
+3. In the app, select **Set Up** on the TV's card.
 4. On the TV, tick **Always allow** and select **Allow**.
 
 The TV then gets a slider and works with schedules and the shortcut like an LG does.
@@ -158,7 +159,7 @@ to get the window back.
 ### Keyboard shortcut
 
 `⌃⌥↑` and `⌃⌥↓` (Control-Option-Up Arrow and Down Arrow) change brightness by 10. On the
-**Hotkeys** page you can change the modifier keys, the step, and whether the shortcut
+**Keyboard Shortcut** page you can change the modifier keys, the step, and whether the shortcut
 controls the TV under the pointer, all TVs, or always the same one.
 
 The pop-up that appears has two styles on the **On-Screen Display** page: **macOS**, below
@@ -186,8 +187,8 @@ that most TVs switch themselves off after a few minutes without a signal, so tur
 **When the displays turn back on** with it. Google TVs can't blank the panel and turn off
 instead.
 
-On a MacBook that leaves the desk, turn on **Automate only while connected** on the TV's
-card. Schedules, power rules and the shortcut then leave that TV alone while its display
+On a MacBook that leaves the desk, choose the TV's **Display** on its card and turn on
+**Automate only while connected**. Schedules, power rules and the shortcut then leave that TV alone while its display
 isn't connected to this Mac. A schedule missed meanwhile is applied when you plug it back
 in.
 
@@ -195,11 +196,11 @@ in.
 
 <table>
   <tr>
-    <td width="50%" valign="top"><b>Hotkeys</b></td>
+    <td width="50%" valign="top"><b>Keyboard Shortcut</b></td>
     <td width="50%" valign="top"><b>On-Screen Display</b></td>
   </tr>
   <tr>
-    <td valign="top"><img src="docs/images/screen-hotkeys.png" alt="Hotkeys page" width="400"></td>
+    <td valign="top"><img src="docs/images/screen-hotkeys.png" alt="Keyboard Shortcut page" width="400"></td>
     <td valign="top"><img src="docs/images/screen-osd.png" alt="On-Screen Display page" width="400"></td>
   </tr>
   <tr>
@@ -264,7 +265,7 @@ installed a system update may also need switching on by hand once.
 Brightness works on TCL so far. Other brands keep that setting somewhere the app can't
 reach yet. Switching on and off works on all of them.
 
-**"No TV on this screen" pops up when I press the shortcut.**
+**"No TV on this display" pops up when I press the shortcut.**
 The app doesn't know which TV that display is. Choose a **Display** on each TV's card.
 
 **"TV isn't connected" pops up when I press the shortcut.**

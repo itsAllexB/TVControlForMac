@@ -34,16 +34,24 @@ talks to each kind of TV, where things live, and how a release is made.
 | `./build.sh release --package` | Release build, plus the release zip and dmg in `dist/`, with their SHA-256 |
 
 The script builds with SwiftPM, puts the binary, `Support/Info.plist` and
-`Support/AppIcon.icns` together into `dist/TVControlForMac.app`, and signs it. `swift build`
-on its own gives you the bare binary in `.build/`, which is enough for the
+`Support/AppIcon.icns` together into `dist/TVControlForMac.app`, and signs it. A release
+build runs on Apple silicon and Intel; a debug build is for the Mac it was built on.
+`swift build` on its own gives you the bare binary in `.build/`, which is enough for the
 [command-line diagnostics](#diagnostics-from-the-command-line) but isn't an app. To edit in
 Xcode, open `Package.swift`.
 
+Always look at the app as `build.sh` built it. SwiftPM records the deployment target
+(macOS 14) in the binary as the SDK it was built with, and macOS 26 and later then draw
+the app the old way: no Liquid Glass, a flat sidebar, the old toolbar and controls.
+`build.sh` passes the linker the real SDK version and stops if the binary doesn't record
+it. `vtool -show-build <binary>` shows what a binary says.
+
 ## Signing
 
-`build.sh` signs the app with a certificate named **TVControlForMac Local Signing** when
-your keychain has one (the older **LGforMac Local Signing** works too), and ad hoc
-otherwise.
+`build.sh` signs the app with the certificate named in `SIGN_IDENTITY` if that's set.
+Otherwise it uses **LGforMac Local Signing** if your keychain has it (the certificate
+releases are signed with, from when the app had that name), then
+**TVControlForMac Local Signing**, and ad hoc as a last resort.
 
 That matters because macOS ties the Local Network permission to the app's signing
 identity, and so does the updater's same-signer check. An ad-hoc signature is a new
@@ -61,9 +69,8 @@ The first build that uses it may ask for access to the key. Choose **Always Allo
 
 ## Trying a build without touching your real setup
 
-The app is single-instance and keeps its data in
-`~/Library/Application Support/TVControlForMac`. To run a second copy on throwaway data
-next to the one you use:
+The app keeps its data in `~/Library/Application Support/TVControlForMac`, and only one
+copy runs per data folder. To run a second copy on throwaway data next to the one you use:
 
 ```bash
 TVCONTROL_DATA_DIR=/tmp/tvcontrol-trial \
@@ -72,7 +79,7 @@ TVCONTROL_DATA_DIR=/tmp/tvcontrol-trial \
 
 A copy started this way leaves the login item alone, doesn't check for updates by itself,
 and doesn't close a copy that's already running. `--page` opens straight on `home`,
-`schedule`, `power`, `hotkeys`, `osd` or `settings`.
+`schedule`, `power`, `hotkeys` (the Keyboard Shortcut page), `osd` or `settings`.
 
 ## Diagnostics from the command line
 
@@ -80,7 +87,8 @@ The binary doubles as a test tool: given one of these as its first argument, it 
 app's own services without a window, prints what happens and exits.
 
 ```bash
-.build/release/TVControlForMac --scan
+swift build
+.build/debug/TVControlForMac --scan
 ```
 
 | Command | What it does |
@@ -92,14 +100,22 @@ app's own services without a window, prints what happens and exits.
 | `--mac <ip>` | Looks up a TV's MAC address in the ARP cache |
 | `--osd-preview` | Asks the running app to show the on-screen display |
 | `--atv-pair <ip>` | Pairs with a Google TV (type the code it shows) |
-| `--atv-probe <ip>` | Connects to a paired Google TV and reports its state |
+| `--atv-probe <ip> [seconds]` | Connects to a paired Google TV and reports its state |
 | `--atv-power <ip> on\|off\|toggle` | Switches a Google TV on or off |
+| `--atv-unpaired <ip>` | Connects with a certificate the TV doesn't know and prints how it refuses |
+| `--atv-pfx-new <file>`, `--atv-pfx-read <file>` | Writes a new pairing certificate; reads one from a `.p12`, base64 text or a settings backup |
 | `--adb-setup <ip>` | Sets up brightness over ADB (approve it on the TV) |
 | `--adb-get <ip>` | Reads the brightness over ADB |
 | `--adb-set <ip> <0-100>` | Sets the brightness over ADB |
 | `--adb-shell <ip> <command>` | Runs one shell command on the TV over ADB |
+| `--adb-key new\|pub\|roundtrip\|sign` | Makes and checks ADB keys, for comparing with `openssl` and `adb` |
 | `--update-check` | Asks GitHub for the latest release and says what the updater would do |
-| `--atv-selftest`, `--adb-selftest`, `--update-selftest` | Offline self-tests; no TV or network needed |
+| `--update-kind [app]`, `--update-signature [app]` | Whether a copy can replace itself, and who signed it |
+| `--update-verify <zip> <version>` | Runs the updater's checks on a release zip |
+| `--update-download` | Downloads and checks the latest release (trial runs only) |
+| `--selftest`, `--atv-selftest`, `--adb-selftest`, `--update-selftest` | Offline self-tests; no TV or network needed |
+
+An option the binary doesn't know is refused, so a typo never starts the app.
 
 The commands use the TVs and pairing in the app's data folder, so `TVCONTROL_DATA_DIR`
 applies to them too. A binary started from Terminal uses Terminal's Local Network
@@ -109,7 +125,8 @@ permission, not the app's, so a command can reach a TV that the app can't.
 
 ### LG webOS
 
-webOS speaks **SSAP over a WebSocket** at `wss://<tv>:3001`, falling back to `ws://<tv>:3000`.
+webOS speaks **SSAP over a WebSocket**: `wss://<tv>:3001` on 2022 and newer models,
+`ws://<tv>:3000` on older ones. The app tries whichever worked last time first.
 
 1. **Pair.** A registration handshake makes the TV show an accept prompt and return a
    `client-key`, which is saved and reused so it never prompts again.
@@ -232,7 +249,7 @@ Source paths are under `Sources/TVControlForMac/`.
 | `App/TVControlForMacApp.swift` | Start-up, single instance, the menu bar item, the window |
 | `App/AppState.swift`, `TvState.swift` | What the UI shows and does, for the app and for each TV |
 | `App/UpdateManager.swift` | When to check for updates, and installing them |
-| `App/CliMode.swift`, `CliAndroidTv.swift`, `CliAdb.swift`, `CliUpdate.swift` | The command-line diagnostics |
+| `App/CliMode.swift`, `CliAndroidTv.swift`, `CliAdb.swift`, `CliUpdate.swift`, `CliSelfTest.swift` | The command-line diagnostics and self-tests |
 | `UI/` | The window and its six pages, the menu bar pop-up, the on-screen display, Identify Displays, shared rows and the "i" button (`Components.swift`), the updates section |
 | `Support/Info.plist`, `Support/AppIcon.icns` | The bundle's settings, and the app icon (designed art, committed as is) |
 | `build.sh` | Build script |
@@ -252,12 +269,16 @@ don't count). An update is only installed if:
 Only a copy that can replace itself installs: one in a folder the user can write to, not
 run from the disk image or from where it was downloaded (macOS runs such a copy from a
 read-only location). Others say there's a new version and open the release page. After
-installing, the new version starts with `--updated`.
+installing, the new version starts with `--updated` (and `--background` when the update
+went in unattended, so it comes back without its window). A build in `dist/` of its own
+source checkout never updates itself.
 
 **Rehearsing an update** without publishing anything: a trial run (see above) accepts
 `TVCONTROL_UPDATE_FEED` (the address of a stand-in for GitHub's "latest release" answer)
-and `TVCONTROL_INSTALL_KIND` (which kind of copy to behave as). Both are ignored unless
-`TVCONTROL_DATA_DIR` is set too.
+and `TVCONTROL_INSTALL_KIND` (`SelfUpdating`, `Manual` or `None`: which kind of copy to
+behave as; without it a rehearsal behaves as `Manual`). `TVCONTROL_UPDATE_HELPER_FAIL`
+(`move-aside`, `move-new`, `verify` or `launch`) makes that step of the swap fail, to
+watch the old version come back. All are ignored unless `TVCONTROL_DATA_DIR` is set too.
 
 ## Making a release
 
