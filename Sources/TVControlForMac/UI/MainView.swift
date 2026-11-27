@@ -11,7 +11,7 @@ enum AppPage: String, CaseIterable, Identifiable {
         case .home: "Home"
         case .schedule: "Schedule"
         case .power: "Power"
-        case .hotkeys: "Hotkeys"
+        case .hotkeys: "Keyboard Shortcut"
         case .osd: "On-Screen Display"
         case .settings: "Settings"
         }
@@ -35,7 +35,7 @@ struct MainView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(AppPage.allCases, selection: Binding(get: { state.page }, set: { state.page = $0 ?? .home })) { item in
+            List(AppPage.allCases, selection: Binding(get: { state.page }, set: { if let page = $0 { state.page = page } })) { item in
                 HStack {
                     Label(item.title, systemImage: item.icon)
                     // A dot on Settings says an update is waiting there.
@@ -50,14 +50,6 @@ struct MainView: View {
                 .tag(item)
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 205, max: 250)
-            .safeAreaInset(edge: .bottom) {
-                Text("Version \(AppInfo.version)")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 10)
-            }
         } detail: {
             switch state.page {
             case .home: HomeView()

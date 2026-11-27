@@ -20,8 +20,6 @@ struct SettingsPage<Content: View>: View {
             content
         }
         .formStyle(.grouped)
-        .frame(maxWidth: 720)
-        .frame(maxWidth: .infinity)
         .navigationTitle(title)
     }
 }
@@ -29,10 +27,13 @@ struct SettingsPage<Content: View>: View {
 /// A small "i" button that shows a longer explanation in a popover.
 struct InfoTip: View {
     let text: String
+    /// What the explanation is about, for VoiceOver ("More about Display").
+    var topic: String?
     @State private var shown = false
 
-    init(_ text: String) {
+    init(_ text: String, topic: String? = nil) {
         self.text = text
+        self.topic = topic
     }
 
     var body: some View {
@@ -44,7 +45,7 @@ struct InfoTip: View {
         }
         .buttonStyle(.plain)
         .help("More about this")
-        .accessibilityLabel("More about this")
+        .accessibilityLabel(topic.map { "More about \($0)" } ?? "More about this")
         .popover(isPresented: $shown, arrowEdge: .bottom) {
             Text(text)
                 .font(.callout)
@@ -74,7 +75,7 @@ struct SettingsGroup<Content: View>: View {
             if let title {
                 HStack(spacing: 5) {
                     Text(title)
-                    if let info { InfoTip(info) }
+                    if let info { InfoTip(info, topic: title) }
                 }
             }
         }
@@ -97,7 +98,7 @@ struct RowLabel: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 5) {
                 Text(title)
-                if let info { InfoTip(info) }
+                if let info { InfoTip(info, topic: title) }
             }
             if let subtitle {
                 Text(subtitle)

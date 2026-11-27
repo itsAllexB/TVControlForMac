@@ -207,7 +207,7 @@ final class TvState: Identifiable {
 
     var brightnessSetupText: String {
         switch brightnessSetup {
-        case .connecting: "Connecting"
+        case .connecting: "Connecting…"
         case .needsDebugging: "Turn on USB debugging, then try again"
         case .awaitingApproval: "Select Allow on the TV"
         case .unsupported: "Not available on this TV"
@@ -218,15 +218,15 @@ final class TvState: Identifiable {
     /// The steps on the TV, for the strip's info button.
     static let brightnessSetupHelp = """
         1. On the TV, open Settings > System > About.
-        2. Select "Android TV OS build" 7 times.
+        2. Select “Android TV OS build” 7 times.
         3. Open Settings > System > Developer options and turn on USB debugging.
-        4. Select Set up here. When the TV asks, tick "Always allow" and select Allow.
+        4. Select Set Up here. When the TV asks, tick “Always allow” and select Allow.
         """
 
     var brightnessSetupButtonText: String? {
         switch brightnessSetup {
-        case .offered: "Set up"
-        case .needsDebugging: "Try again"
+        case .offered: "Set Up"
+        case .needsDebugging: "Try Again"
         default: nil
         }
     }
@@ -279,10 +279,13 @@ final class TvState: Identifiable {
         self.status = status
         isConnected = status == .connected
         isBusy = status == .connecting || status == .awaitingPairing
-        statusText = message ?? {
+        // Controllers report progress in the words TVControlForWin uses; the Mac writes
+        // something still going on with an ellipsis.
+        let inProgress = ["Connecting", "Reconnecting"]
+        statusText = message.map { inProgress.contains($0) ? $0 + "…" : $0 } ?? {
             switch status {
             case .connected: "Connected"
-            case .connecting: "Connecting"
+            case .connecting: "Connecting…"
             case .awaitingPairing: "Accept the prompt on the TV"
             case .needsPairing: "Not paired"
             case .awaitingCode: "Enter the code from the TV"

@@ -2,7 +2,7 @@
 import SwiftUI
 
 /// The Settings page's "Updates" section: the running version with the one update button
-/// (Check now, Update, Download or Install, by what's known so far), and the two switches
+/// (Check Now, Update, Download or Install, by what's known so far), and the two switches
 /// behind the daily check.
 struct UpdatesSection: View {
     let updates: UpdateManager

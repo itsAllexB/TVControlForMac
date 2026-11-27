@@ -45,20 +45,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var started = false
     private var legacyAppObserver: NSObjectProtocol?
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        // An instance pointed at its own data folder is a separate app as far as this
-        // goes: it runs next to the normal one and leaves an old LGforMac alone.
-        if !AppPaths.isTrialRun {
-            // Single instance: a second launch just surfaces the one already running.
-            let running = NSRunningApplication.runningApplications(
-                withBundleIdentifier: Bundle.main.bundleIdentifier ?? AppInfo.bundleIdentifier)
-            if running.count > 1 {
-                running.first { $0 != .current }?.activate()
-                NSApp.terminate(nil)
-                return
-            }
-            quitLegacyApp()
+    // Held for the life of the process; the lock goes when the process does.
+    private static var lockFile: Int32 = -1
+
+    /// Claims this data folder for this process. Returns nil when it's now ours, or the
+    /// pid of the instance that already has it.
+    private static func claimDataFolder() -> pid_t? {
+        let path = AppPaths.dataDir.appendingPathComponent(".instance").path
+        let fd = open(path, O_CREAT | O_RDWR, 0o600)
+        guard fd >= 0 else { return nil } // can't tell: better two instances than none
+        if flock(fd, LOCK_EX | LOCK_NB) != 0 {
+            let text = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+            close(fd)
+            return pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
         }
+        ftruncate(fd, 0)
+        _ = "\(getpid())".withCString { write(fd, $0, strlen($0)) }
+        lockFile = fd
+        return nil
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Single instance per data folder: a second launch just surfaces the one already
+        // running. An instance pointed at its own data folder is a separate app as far as
+        // this goes: it runs next to the normal one and leaves an old LGforMac alone.
+        if let other = Self.claimDataFolder() {
+            NSRunningApplication(processIdentifier: other)?.activate()
+            NSApp.terminate(nil)
+            return
+        }
+        if !AppPaths.isTrialRun { quitLegacyApp() }
 
         let state = AppState.shared
         if let page = Self.requestedPage(CommandLine.arguments) { state.page = page }
@@ -168,6 +184,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.toolbarStyle = .unified
         window.titlebarSeparatorStyle = .automatic
         window.contentMinSize = NSSize(width: 760, height: 500)
+        // Rows stretched across a very wide window are hard to read across.
+        window.contentMaxSize = NSSize(width: 1000, height: CGFloat.greatestFiniteMagnitude)
         window.setFrameAutosaveName("TVControlForMacMain")
         window.isReleasedWhenClosed = false
         self.init(window: window)

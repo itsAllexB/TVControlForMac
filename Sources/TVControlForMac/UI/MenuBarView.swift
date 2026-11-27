@@ -72,7 +72,7 @@ private struct MenuBarTvRow: View {
                     Image(systemName: "pause.circle")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
-                        .help("Automation is paused, the display isn't connected")
+                        .help("Automation is paused while its display isn't connected")
                 }
                 Spacer()
                 Text(tv.supportsBrightness ? "\(tv.backlight)%" : note)

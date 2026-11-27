@@ -34,6 +34,9 @@ struct ScheduleView: View {
                 .help(state.canAddSchedule ? "" : "Up to 10 schedules")
             }
         }
+        // Back in time order once nobody is editing a row.
+        .onAppear { state.sortSchedules() }
+        .onDisappear { state.sortSchedules() }
     }
 }
 
@@ -43,16 +46,10 @@ private struct ScheduleRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Toggle("On", isOn: Binding(
-                get: { schedule.enabled },
-                set: { schedule.enabled = $0; state.persistSchedules() }
-            ))
-            .labelsHidden()
-            .controlSize(.small)
-
             DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
                 .labelsHidden()
                 .fixedSize()
+                .opacity(schedule.enabled ? 1 : 0.5)
 
             Slider(value: Binding(
                 get: { Double(schedule.brightness) },
@@ -60,15 +57,24 @@ private struct ScheduleRow: View {
             ), in: 0...100)
             .labelsHidden()
             .accessibilityLabel("Brightness")
+            .opacity(schedule.enabled ? 1 : 0.5)
 
             Text("\(schedule.brightness)%")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(width: 42, alignment: .trailing)
+                .opacity(schedule.enabled ? 1 : 0.5)
 
             if state.showsTargetPicker(for: schedule) {
                 targetMenu
             }
+
+            Toggle("Enabled", isOn: Binding(
+                get: { schedule.enabled },
+                set: { schedule.enabled = $0; state.persistSchedules() }
+            ))
+            .labelsHidden()
+            .controlSize(.small)
 
             Button {
                 state.removeSchedule(schedule)
@@ -79,7 +85,6 @@ private struct ScheduleRow: View {
             .help("Remove schedule")
             .accessibilityLabel("Remove schedule")
         }
-        .opacity(schedule.enabled ? 1 : 0.55)
     }
 
     // Which TVs this schedule changes: all of them, or the ticked ones. Only TVs whose
@@ -190,6 +195,8 @@ struct PowerView: View {
         .onChange(of: state.tvs.map(\.id)) {
             if scopeTv == nil { scope = "" }
         }
+        // After a settings import the page goes back to the shared rules, now the restored ones.
+        .onChange(of: state.reloads) { scope = "" }
     }
 
     private func rule<Value>(_ keyPath: WritableKeyPath<PowerSettings, Value>) -> Binding<Value> {
@@ -241,7 +248,7 @@ struct HotkeysView: View {
 
                 if state.showsHotkeyTarget {
                     PickerRow("Which TV",
-                              info: "“TV under the pointer” changes the TV on the display your pointer is on. Choose each TV's display on the Home page. On a display with no TV, nothing changes.",
+                              info: "“TV Under the Pointer” changes the TV on the display your pointer is on. Choose each TV's display on the Home page. On a display with no TV, nothing changes.",
                               selection: $state.hotkeyTarget) {
                         ForEach(state.hotkeyTargetChoices) { choice in
                             Text(choice.name).tag(choice.id)
@@ -364,9 +371,10 @@ struct SettingsView: View {
                           info: "Opening the app yourself always shows the window.",
                           selection: $state.launchBehavior) {
                     Text("Window").tag(0)
-                    Text("Minimised").tag(1)
-                    Text("Nothing").tag(2)
+                    Text("Minimised window").tag(1)
+                    Text("No window").tag(2)
                 }
+                .disabled(!state.startAtLogin)
             }
 
             SettingsGroup("Backup") {
@@ -406,6 +414,8 @@ struct SettingsView: View {
             do {
                 let json = try String(contentsOf: url, encoding: .utf8)
                 try state.importSettings(json)
+                dialogMessage = DialogMessage(title: "Settings imported",
+                                              text: "Your TVs and settings are restored.")
             } catch {
                 dialogMessage = DialogMessage(title: "Couldn't import",
                                               text: "That file isn't a settings backup.")

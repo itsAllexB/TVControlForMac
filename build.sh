@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Builds TVControlForMac and assembles dist/TVControlForMac.app, signed with the stable
 # local certificate when there is one (ad hoc otherwise).
 #

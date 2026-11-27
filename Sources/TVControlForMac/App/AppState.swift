@@ -36,6 +36,8 @@ final class AppState {
     var screens: [ScreenInfo] = []
     /// The page the main window shows.
     var page: AppPage = .home
+    /// Counts settings imports, so a page can drop what it had selected before one.
+    private(set) var reloads = 0
 
     /// App updates: the Settings page's "Updates" section and the daily check.
     @ObservationIgnored private(set) lazy var updates = UpdateManager(
@@ -60,6 +62,7 @@ final class AppState {
 
     private init() {
         settings = store.loadSettings()
+        settings.schedules.sort { $0.minutesOfDay < $1.minutesOfDay }
         for device in store.loadDevices() {
             add(device, start: false)
         }
@@ -125,7 +128,10 @@ final class AppState {
             networkPermissionSuspected = false
         } else {
             consecutiveConnectFailures += 1
-            if consecutiveConnectFailures >= 3, !networkPermissionSuspected {
+            // Not while any TV is connected: then the network is plainly allowed, and the
+            // failures are just a TV that's off.
+            if consecutiveConnectFailures >= 3, !networkPermissionSuspected,
+               !tvs.contains(where: \.isConnected) {
                 networkPermissionSuspected = true
                 // Once per launch, nudge macOS to show the Local Network prompt itself;
                 // a multicast is what reliably makes the system (re)register the app.
@@ -395,15 +401,15 @@ final class AppState {
     /// answers on, so there's no brand to pick. Returns nil when it was added, otherwise
     /// what to tell the user.
     func addTv(name: String, host: String) async -> String? {
-        let host = host.trimmingCharacters(in: .whitespaces)
-        let name = name.trimmingCharacters(in: .whitespaces)
+        let host = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !host.isEmpty else { return nil }
-        if hasTv(host: host) { return "That TV is already added" }
+        if hasTv(host: host) { return "This TV has already been added." }
 
         guard let kind = await TvControllerFactory.detectKind(host: host) else {
             // Nothing answered, so there's no telling what kind of TV it is. Better to say
             // so than to save a card that could never connect.
-            return "No TV found at that address. Turn the TV on and try again"
+            return "No TV found at that address. Turn the TV on and try again."
         }
         if hasTv(host: host) { return nil } // added some other way while we were probing
 
@@ -478,35 +484,21 @@ final class AppState {
 
     // MARK: - Hotkeys
 
-    /// Nudges brightness by a signed step from a global hotkey, on the TV(s) chosen on
-    /// the Hotkeys page (see `RuleTargets.planHotkey` for the rules). A TV whose
-    /// automation is paused (linked display not connected) is left alone; if that leaves
-    /// nothing to change, the outcome is `.disconnected` so the overlay can say why.
+    /// Nudges brightness by a signed step from the keyboard shortcut, on the TV(s) chosen
+    /// on its page (see `RuleTargets.planHotkey` for the rules). Which TVs it means is
+    /// decided first, from what each TV can really do; a TV whose automation is paused
+    /// (linked display not connected) then sits it out. If that leaves nothing to change,
+    /// the outcome is `.disconnected` so the overlay can say why.
     func nudgeFromHotkey(step: Int) -> HotkeyOutcome {
-        let all = tvInfos
-        let cursor = { ScreenService.screenIdAtCursor() }
-        let paused = Set(tvs.filter(\.automationPaused).map(\.id))
-        // A paused TV counts as one that can't be dimmed right now.
-        let available = all.map { info in
-            paused.contains(info.id)
-                ? TvInfo(id: info.id, name: info.name, supportsBrightness: false,
-                         pairedScreenId: info.pairedScreenId)
-                : info
-        }
+        let plan = RuleTargets.planHotkey(target: settings.hotkeyTarget, tvs: tvInfos,
+                                          cursorScreen: { ScreenService.screenIdAtCursor() })
+        guard plan.outcome == .adjusted else { return plan.outcome == .unpaired ? .unpaired : .none }
 
-        let plan = RuleTargets.planHotkey(target: settings.hotkeyTarget, tvs: available, cursorScreen: cursor)
-        guard plan.outcome == .adjusted, let shownId = plan.shownTvId, let shown = tv(withId: shownId) else {
-            // Would it have worked with every display attached? Then say that's why not.
-            if !paused.isEmpty,
-               RuleTargets.planHotkey(target: settings.hotkeyTarget, tvs: all, cursorScreen: cursor)
-                .outcome == .adjusted {
-                return .disconnected
-            }
-            return plan.outcome == .unpaired ? .unpaired : .none
-        }
-
-        for id in plan.tvIds { tv(withId: id)?.nudge(step) }
-        return .adjusted(name: plan.tvIds.count == 1 ? shown.name : nil, value: shown.backlight,
+        let targets = plan.tvIds.compactMap { tv(withId: $0) }.filter(\.automationAllowed)
+        guard !targets.isEmpty else { return .disconnected }
+        let shown = targets.first { $0.id == plan.shownTvId } ?? targets[0]
+        for tv in targets { tv.nudge(step) }
+        return .adjusted(name: targets.count == 1 ? shown.name : nil, value: shown.backlight,
                          screenId: shown.linkedScreenId.isEmpty ? nil : shown.linkedScreenId)
     }
 
@@ -529,7 +521,7 @@ final class AppState {
     /// dimmed. A TV picked earlier that can't be dimmed right now stays listed, so the
     /// choice still shows as made.
     var hotkeyTargetChoices: [TvChoice] {
-        [TvChoice(id: "", name: "TV under the pointer"), TvChoice(id: RuleTargets.allTvs, name: "All TVs")]
+        [TvChoice(id: "", name: "TV Under the Pointer"), TvChoice(id: RuleTargets.allTvs, name: "All TVs")]
             + tvs.filter { $0.supportsBrightness || $0.id == settings.hotkeyTarget }
                 .map { TvChoice(id: $0.id, name: $0.name) }
     }
@@ -630,17 +622,27 @@ final class AppState {
 
     func addSchedule() {
         guard canAddSchedule else { return }
+        sortSchedules()
         settings.schedules.append(BrightnessSchedule())
-        persistSchedules()
+        saveSettings()
     }
 
     func removeSchedule(_ schedule: BrightnessSchedule) {
         settings.schedules.removeAll { $0.id == schedule.id }
-        persistSchedules()
+        saveSettings()
     }
 
+    /// Saves an edit to a schedule. The list isn't re-sorted here: a row that moved while
+    /// its time was being changed would slip out from under the pointer.
     func persistSchedules() {
-        settings.schedules.sort { $0.minutesOfDay < $1.minutesOfDay }
+        saveSettings()
+    }
+
+    /// Puts the schedules in time order (when one is added, and when the page is left).
+    func sortSchedules() {
+        let sorted = settings.schedules.sorted { $0.minutesOfDay < $1.minutesOfDay }
+        guard sorted != settings.schedules else { return }
+        settings.schedules = sorted
         saveSettings()
     }
 
@@ -722,23 +724,14 @@ final class AppState {
     var hotkeyShift: Bool { get { hasMod(4) } set { setMod(4, newValue) } }
     var hotkeyCommand: Bool { get { hasMod(8) } set { setMod(8, newValue) } }
 
-    /// Human-readable combo for display, e.g. "⌃ ⌥ + ↑ / ↓".
-    var hotkeyComboText: String {
-        var parts: [String] = []
-        if hotkeyControl { parts.append("⌃") }
-        if hotkeyOption { parts.append("⌥") }
-        if hotkeyShift { parts.append("⇧") }
-        if hotkeyCommand { parts.append("⌘") }
-        return parts.isEmpty ? "↑ / ↓" : parts.joined(separator: " ") + " + ↑ / ↓"
-    }
-
     private func hasMod(_ bit: Int) -> Bool { settings.hotkeyModifiers & bit != 0 }
 
     private func setMod(_ bit: Int, _ on: Bool) {
         let current = settings.hotkeyModifiers
         var next = on ? current | bit : current & ~bit
         if next == 0 { next = current } // don't allow clearing the last modifier
-        guard next != current else { return }
+        // A refused change still writes, so the button that was clicked redraws as on.
+        guard next != current else { settings.hotkeyModifiers = current; return }
         settings.hotkeyModifiers = next
         saveSettings()
         hotkeys.update(modifiers: next)
@@ -770,11 +763,13 @@ final class AppState {
         refreshScreens()
 
         settings = store.loadSettings()
+        settings.schedules.sort { $0.minutesOfDay < $1.minutesOfDay }
         AutostartService.apply(settings.startAtLogin)
         applyTheme()
         hotkeys.update(modifiers: settings.hotkeyModifiers)
         updateDisplayPresence()
         updates.settingsReloaded()
+        reloads += 1
     }
 
     func persist() {

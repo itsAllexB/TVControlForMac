@@ -54,6 +54,11 @@ final class DeviceStore {
     /// TVControlForWin backup.
     func deserializeBackup(_ json: String) throws -> BackupData {
         var data = try JSONDecoder().decode(BackupData.self, from: Data(json.utf8))
+        // Importing replaces everything: a JSON file picked by mistake mustn't read as an
+        // empty backup.
+        guard data.devices != nil || data.settings != nil else {
+            throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Not a settings backup."))
+        }
         data.devices = data.devices ?? []
         data.settings = data.settings ?? AppSettings()
         return data

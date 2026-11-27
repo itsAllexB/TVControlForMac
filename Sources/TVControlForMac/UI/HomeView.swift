@@ -45,7 +45,7 @@ struct HomeView: View {
                 }
                 .help("Add a TV by its IP address")
                 .popover(isPresented: $showAddByIp, arrowEdge: .bottom) {
-                    AddByIpForm()
+                    AddByIpForm(isPresented: $showAddByIp)
                 }
                 Button {
                     showDiscover = true
@@ -68,7 +68,7 @@ struct HomeView: View {
 /// Popover form for adding a TV by its address. The brand is worked out from the ports
 /// the TV answers on, so there's nothing to pick.
 private struct AddByIpForm: View {
-    @Environment(\.dismiss) private var dismiss
+    @Binding var isPresented: Bool
     @State private var name = ""
     @State private var host = ""
     @State private var error = ""
@@ -109,7 +109,7 @@ private struct AddByIpForm: View {
             if let problem {
                 error = problem
             } else {
-                dismiss()
+                isPresented = false
             }
         }
     }
@@ -137,8 +137,8 @@ private struct TvGroup: View {
             displayRow
             if !tv.linkedScreenId.isEmpty {
                 ToggleRow("Automate only while connected",
-                          subtitle: tv.automationPaused ? "Paused, the display isn't connected" : nil,
-                          info: "Schedules, power rules and hotkeys leave this TV alone while its display isn't connected to this Mac, for example when a MacBook is away from the desk. The controls on this page always work.",
+                          subtitle: tv.automationPaused ? "Paused while its display isn't connected" : nil,
+                          info: "Schedules, power rules and the keyboard shortcut leave this TV alone while its display isn't connected to this Mac, for example when a MacBook is away from the desk. The controls on this page always work.",
                           isOn: $tv.automationGate)
             }
         }
@@ -182,7 +182,7 @@ private struct TvGroup: View {
                 Image(systemName: "power")
             }
             .help("Turn on or off")
-            .accessibilityLabel("Turn on or off")
+            .accessibilityLabel("Turn \(tv.name) on or off")
 
             Menu {
                 Button("Move Up") { move(by: -1) }
@@ -196,7 +196,7 @@ private struct TvGroup: View {
             }
             .menuIndicator(.hidden)
             .fixedSize()
-            .accessibilityLabel("More")
+            .accessibilityLabel("More for \(tv.name)")
         }
     }
 
@@ -269,7 +269,7 @@ private struct TvGroup: View {
     private var displayRow: some View {
         PickerRow("Display",
                   subtitle: !tv.linkedScreenId.isEmpty && !tv.displayConnected ? "Not connected" : nil,
-                  info: "Choose which display this TV is. The hotkeys then change the TV under your pointer, and the on-screen display shows on the right TV.",
+                  info: "Choose which display this TV is. The keyboard shortcut then changes the TV under your pointer, and the on-screen display shows on the right TV.",
                   selection: Binding(
                       get: { tv.linkedScreenId },
                       set: { state.linkDisplay(tv, screenId: $0) }
@@ -312,7 +312,7 @@ struct DiscoverSheet: View {
     @State private var discovered: [DiscoveredTv] = []
     @State private var added: Set<String> = []
     @State private var scanning = false
-    @State private var statusText = "Searching"
+    @State private var statusText = "Searching…"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -350,7 +350,7 @@ struct DiscoverSheet: View {
             .frame(minHeight: 190)
             .overlay {
                 if discovered.isEmpty && !scanning {
-                    Text("Make sure the TV is on and on the same network")
+                    Text("Make sure the TV is on and on the same network as this Mac")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -383,7 +383,7 @@ struct DiscoverSheet: View {
         guard !scanning else { return }
         scanning = true
         discovered = []
-        statusText = "Searching"
+        statusText = "Searching…"
 
         let found = await SsdpDiscovery.findTvs { tv in
             if !discovered.contains(where: { $0.host == tv.host }) {

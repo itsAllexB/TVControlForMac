@@ -165,7 +165,7 @@ final class UpdateManager {
 
     var statusText: String {
         switch state {
-        case .checking: return "Checking"
+        case .checking: return "Checking…"
         case .upToDate: return "Up to date"
         case .available: return "\(newVersion) is available"
         case .downloading: return "Downloading \(newVersion), \(progress)%"
@@ -184,7 +184,7 @@ final class UpdateManager {
         switch state {
         case .available: return byHand ? "Download" : "Update"
         case .ready: return "Install"
-        default: return "Check now"
+        default: return "Check Now"
         }
     }
 
@@ -298,7 +298,7 @@ final class UpdateManager {
             if Task.isCancelled { return }
             Log.write("update: check failed (\(error.localizedDescription))")
             if manual {
-                failure = "Couldn't check. Try again later"
+                failure = "Couldn't check for updates. Try again later."
                 state = .failed
             } else {
                 // Nothing to tell anyone: put back what was showing.
@@ -366,7 +366,7 @@ final class UpdateManager {
             Log.write("update: download failed (\(error.localizedDescription))")
             archive = nil
             try? FileManager.default.removeItem(at: service.downloadDir.appendingPathComponent(asset.name))
-            failure = "Download failed. Try again later"
+            failure = "Download failed. Try again later."
             state = .failed
             return false
         }
@@ -393,7 +393,7 @@ final class UpdateManager {
         guard let update, let asset = update.asset, let archive, kind == .selfUpdating,
               UpdateService.matches(archive, asset) else {
             self.archive = nil
-            failure = "Download failed. Try again later"
+            failure = "Download failed. Try again later."
             state = .failed
             return
         }
@@ -440,7 +440,7 @@ final class UpdateManager {
         try? await Task.sleep(nanoseconds: UInt64(Self.quitGrace * 1_000_000_000))
         if state == .installing {
             Log.write("update: the app didn't quit, so \(update.version) wasn't installed")
-            failure = "Couldn't restart to update. Try again later"
+            failure = "Couldn't restart to update. Try again later."
             state = .failed
         }
     }
