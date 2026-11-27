@@ -84,6 +84,14 @@ fixed the pop-up sometimes appearing empty.
 - [ ] A way to move to a new signing certificate (Developer ID) without stranding copies
       signed with the current one.
 
+## From the reviews, still open
+- [ ] **LG pairing prompt**: an LG without a stored key shows its accept prompt at every
+      app start, and again every few seconds after a decline. It should say "Not paired"
+      with a **Pair** button and only show the prompt when asked, as Google TVs do.
+- [ ] Windows-style on-screen display: a second show within its 0.25 s entrance may not
+      resize the pill, and its shadow may be stale after a size change (unconfirmed).
+- [ ] `--osd-preview --theme` and `--anchor fallback` stick until the app restarts.
+
 ## Maybe / later
 - [ ] Show a TV's power state in the menu bar icon, as well as on the Home page.
 - [ ] Optional per-TV shortcuts, in addition to the pointer targeting.

@@ -442,6 +442,13 @@ final class WebOsController: TvController {
     /// minutes after a TV disappears.
     func togglePower() async {
         let state = await getPowerState()
+        // A blanked panel counts as awake to webOS, but whoever presses the button is
+        // looking at a dark TV and means "on": bring the picture back rather than turn the
+        // TV off for real.
+        if let state, state.lowercased().contains("screen off") {
+            await screenOn()
+            return
+        }
         if let state, Self.isAwakeState(state) {
             await turnOff()
             return

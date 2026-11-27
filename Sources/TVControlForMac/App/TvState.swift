@@ -166,8 +166,15 @@ final class TvState: Identifiable {
 
     private func refreshCapabilities() {
         supportsBrightness = controller.supportsBrightness
-        brightnessSetup = controller.brightnessSetup
+        let setup = controller.brightnessSetup
+        // Back to "offered" straight from the approval prompt means nobody answered it.
+        setupWentUnanswered = brightnessSetup == .awaitingApproval && setup == .offered
+            || (setupWentUnanswered && setup == .offered)
+        brightnessSetup = setup
     }
+
+    /// The TV asked "Allow USB debugging?" and the wait ran out without an answer.
+    private var setupWentUnanswered = false
 
     // MARK: - Pairing by code (TVs that show a code to type in, rather than an accept prompt)
 
@@ -216,7 +223,7 @@ final class TvState: Identifiable {
         case .needsDebugging: "Turn on USB debugging, then try again"
         case .awaitingApproval: "Select Allow on the TV"
         case .unsupported: "Not available on this TV"
-        default: "Needs USB debugging on the TV"
+        default: setupWentUnanswered ? "No answer on the TV. Try again." : "Needs USB debugging on the TV"
         }
     }
 
