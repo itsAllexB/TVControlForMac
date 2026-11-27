@@ -23,7 +23,7 @@
 
 <p align="center">
   <img src="docs/images/screen-home.png" alt="TVControlForMac's Home page, with a TV's brightness slider" width="800"><br>
-  <img src="docs/images/brightness-bar.png" alt="The brightness pop-up that appears when you press the shortcut" width="412">
+  <img src="docs/images/brightness-bar.png" alt="The brightness pop-up that appears when you press the shortcut" width="391">
 </p>
 
 <p align="center">
