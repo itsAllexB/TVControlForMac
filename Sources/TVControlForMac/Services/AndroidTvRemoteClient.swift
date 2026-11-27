@@ -159,6 +159,11 @@ final class AndroidTvTlsConnection: @unchecked Sendable {
             sec_protocol_options_set_local_identity(options, identity)
         }
         if let maxVersion { sec_protocol_options_set_max_tls_protocol_version(options, maxVersion) }
+        // Network.framework resumes TLS 1.2 sessions to the same host and port by default. A
+        // resumed handshake exchanges no certificates, so the verify block below never runs
+        // and pairing has no server key to hash: every other attempt on a TLS 1.2 TV would
+        // fail with "presented no certificate". Measured over loopback (see the self-test).
+        sec_protocol_options_set_tls_resumption_enabled(options, false)
 
         // The TV's certificate is self-signed: accept it, but keep it, since the pairing
         // secret is computed over its public key.

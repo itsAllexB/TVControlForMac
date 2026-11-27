@@ -611,9 +611,14 @@ private enum AtvSelfTest {
                 return true
             }
         }
+        // A TLS 1.2 TV would otherwise get a resumed session on the next connection: no
+        // certificates exchanged, so no server certificate for the pairing secret.
+        await checkAsync("tls loopback: TLS 1.2, second connection is a full handshake (no session resumption)") {
+            try await loopback(acceptClient: true, tls12: true, connections: 2)
+        }
     }
 
-    private static func loopback(acceptClient: Bool) async throws -> Bool {
+    private static func loopback(acceptClient: Bool, tls12: Bool = false, connections: Int = 1) async throws -> Bool {
         let server = try AndroidTvIdentity.createClientCertificate().credential
         let client = try AndroidTvIdentity.createClientCertificate().credential
         let queue = DispatchQueue(label: "selftest.tls")
@@ -624,6 +629,7 @@ private enum AtvSelfTest {
             sec_protocol_options_set_local_identity(tls.securityProtocolOptions, id)
         }
         sec_protocol_options_set_peer_authentication_required(tls.securityProtocolOptions, true)
+        if tls12 { sec_protocol_options_set_max_tls_protocol_version(tls.securityProtocolOptions, .TLSv12) }
         sec_protocol_options_set_verify_block(tls.securityProtocolOptions, { _, trust, complete in
             let chain = SecTrustCopyCertificateChain(sec_trust_copy_ref(trust).takeRetainedValue()) as? [SecCertificate]
             seen.set(chain?.first.map { Array(SecCertificateCopyData($0) as Data) })
@@ -655,13 +661,17 @@ private enum AtvSelfTest {
             listener.start(queue: queue)
         }
 
-        let connection = try await AndroidTvTlsConnection.open(host: "127.0.0.1", port: port, credential: client, timeout: 5)
-        defer { connection.close() }
-        let frame = try ProtoMessage.parse(try await connection.readFrame(timeout: 5))
-        let serverDer = connection.serverCertificate.map { Array(SecCertificateCopyData($0) as Data) }
-        return seen.get() == client.certificateDer
-            && serverDer == server.certificateDer
-            && frame.message(1)?.string(1) == "loopback"
+        for _ in 0..<connections {
+            seen.set(nil)
+            let connection = try await AndroidTvTlsConnection.open(host: "127.0.0.1", port: port, credential: client, timeout: 5)
+            defer { connection.close() }
+            let frame = try ProtoMessage.parse(try await connection.readFrame(timeout: 5))
+            let serverDer = connection.serverCertificate.map { Array(SecCertificateCopyData($0) as Data) }
+            guard seen.get() == client.certificateDer,
+                  serverDer == server.certificateDer,
+                  frame.message(1)?.string(1) == "loopback" else { return false }
+        }
+        return true
     }
 
     private final class SeenBox: @unchecked Sendable {
