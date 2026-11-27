@@ -7,7 +7,7 @@ import Observation
 /// that slides + fades in, anchored to a configurable corner of a configurable screen.
 @MainActor
 final class OsdController {
-    // Metrics (points). "Win" is the LGforWin-style pill; "mac" mirrors the macOS 26
+    // Metrics (points). "Win" is the TVControlForWin-style pill; "mac" mirrors the macOS 26
     // volume/brightness pop-up (wide Liquid Glass capsule below the menu bar,
     // top-trailing) — measured against the system HUD.
     private static let winWidth: CGFloat = 230
@@ -264,7 +264,7 @@ final class OsdController {
 final class OsdModel {
     enum Mode { case brightness, message }
     var mode: Mode = .brightness
-    /// 0 = macOS system pop-up look, 1 = Windows/LGforWin pill.
+    /// 0 = macOS system pop-up look, 1 = Windows/TVControlForWin pill.
     var style = 0
     /// True when an NSGlassEffectView provides the backdrop, so the view draws none.
     var glassBackdrop = false
@@ -346,7 +346,7 @@ struct OsdView: View {
         .padding(.horizontal, 20)
     }
 
-    /// The LGforWin-style pill (icon + bar + numeric value).
+    /// The TVControlForWin-style pill (icon + bar + numeric value).
     private var winBrightness: some View {
         VStack(spacing: 6) {
             if let name = model.name {

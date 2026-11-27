@@ -1,17 +1,17 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import Foundation
 
-/// Loads and saves the TV list (incl. client-keys) plus app settings as JSON in
-/// ~/Library/Application Support/LGforMac. Client-key reuse avoids re-pairing every launch.
+/// Loads and saves the TV list (incl. pairing credentials) plus app settings as JSON in
+/// the data folder (`AppPaths.dataDir`). Credential reuse avoids re-pairing every launch.
 final class DeviceStore {
-    static let directory: URL = {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("LGforMac")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
-    }()
+    static var directory: URL { AppPaths.dataDir }
 
-    private let devicesURL = directory.appendingPathComponent("devices.json")
-    private let settingsURL = directory.appendingPathComponent("settings.json")
+    private let devicesURL = AppPaths.dataDir.appendingPathComponent("devices.json")
+    private let settingsURL = AppPaths.dataDir.appendingPathComponent("settings.json")
+
+    // Saves can be asked for from any thread (a controller that just learned a MAC, the
+    // UI changing a setting); one at a time, so a slower write can't land over a newer one.
+    private let gate = NSLock()
 
     private static func encoder() -> JSONEncoder {
         let e = JSONEncoder()
@@ -25,6 +25,7 @@ final class DeviceStore {
     }
 
     func saveDevices(_ devices: [TvDevice]) {
+        gate.lock(); defer { gate.unlock() }
         if let data = try? Self.encoder().encode(devices) {
             try? data.write(to: devicesURL, options: .atomic)
         }
@@ -36,6 +37,7 @@ final class DeviceStore {
     }
 
     func saveSettings(_ settings: AppSettings) {
+        gate.lock(); defer { gate.unlock() }
         if let data = try? Self.encoder().encode(settings) {
             try? data.write(to: settingsURL, options: .atomic)
         }
@@ -48,7 +50,8 @@ final class DeviceStore {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// Parses a backup string; throws if the file isn't a valid LGforWin/LGforMac backup.
+    /// Parses a backup string; throws if the file isn't a valid TVControlForMac /
+    /// TVControlForWin backup.
     func deserializeBackup(_ json: String) throws -> BackupData {
         var data = try JSONDecoder().decode(BackupData.self, from: Data(json.utf8))
         data.devices = data.devices ?? []
@@ -57,10 +60,10 @@ final class DeviceStore {
     }
 }
 
-/// Tiny append-only logger to ~/Library/Application Support/LGforMac/log.txt.
+/// Tiny append-only logger to `log.txt` in the data folder.
 enum Log {
     private static let gate = NSLock()
-    private static let url = DeviceStore.directory.appendingPathComponent("log.txt")
+    private static let url = AppPaths.dataDir.appendingPathComponent("log.txt")
     private static let stamp: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"

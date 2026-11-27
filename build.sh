@@ -1,11 +1,11 @@
 #!/bin/bash
-# Builds LGforMac and assembles dist/LGforMac.app (ad-hoc signed).
+# Builds TVControlForMac and assembles dist/TVControlForMac.app (ad-hoc signed).
 # Usage: ./build.sh [debug|release] [--run]
 set -euo pipefail
 cd "$(dirname "$0")"
 
 CONFIG="${1:-release}"
-APP="dist/LGforMac.app"
+APP="dist/TVControlForMac.app"
 
 # Generate the app icon once (committed afterwards, regenerated only if missing).
 if [[ ! -f Support/AppIcon.icns ]]; then
@@ -16,15 +16,18 @@ fi
 swift build -c "$CONFIG"
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Library/LaunchAgents"
-cp ".build/$CONFIG/LGforMac" "$APP/Contents/MacOS/"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp ".build/$CONFIG/TVControlForMac" "$APP/Contents/MacOS/"
 cp Support/Info.plist "$APP/Contents/"
 cp Support/AppIcon.icns "$APP/Contents/Resources/"
-cp Support/com.itsallexb.LGforMac.autostart.plist "$APP/Contents/Library/LaunchAgents/"
 
 # Prefer a stable local signing identity (keeps the macOS Local Network permission
-# grant across rebuilds — ad-hoc signatures change identity every build); ad-hoc fallback.
-if security find-identity -p codesigning 2>/dev/null | grep -q "LGforMac Local Signing"; then
+# grant across rebuilds; ad-hoc signatures change identity every build). The older
+# "LGforMac Local Signing" certificate is accepted too. Ad-hoc is the fallback.
+IDENTITIES="$(security find-identity -p codesigning 2>/dev/null || true)"
+if grep -q "TVControlForMac Local Signing" <<<"$IDENTITIES"; then
+    codesign --force --sign "TVControlForMac Local Signing" "$APP"
+elif grep -q "LGforMac Local Signing" <<<"$IDENTITIES"; then
     codesign --force --sign "LGforMac Local Signing" "$APP"
 else
     codesign --force --sign - "$APP"

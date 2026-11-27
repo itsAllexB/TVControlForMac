@@ -9,7 +9,7 @@ enum HotkeyAction {
 /// RegisterEventHotKey — works without accessibility permissions and fires even when the
 /// app is in the background. Events arrive on the main thread.
 ///
-/// The modifier bitmask matches LGforWin's persisted format:
+/// The modifier bitmask matches TVControlForWin's persisted format:
 /// 1 = Option (Alt), 2 = Control (Ctrl), 4 = Shift, 8 = Command (Win).
 final class HotkeyService {
     private static let idUp: UInt32 = 1

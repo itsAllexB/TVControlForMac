@@ -13,11 +13,11 @@ enum Entry {
             }
             dispatchMain() // service the main queue for the CLI's MainActor hops
         }
-        LGforMacApp.main()
+        TVControlForMacApp.main()
     }
 }
 
-struct LGforMacApp: App {
+struct TVControlForMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Single instance: a second launch just surfaces the one already running.
         let running = NSRunningApplication.runningApplications(
-            withBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.itsallexb.LGforMac")
+            withBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.itsallexb.TVControlForMac")
         if running.count > 1 {
             running.first { $0 != .current }?.activate()
             NSApp.terminate(nil)
@@ -114,21 +114,21 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     convenience init() {
         let hosting = NSHostingController(rootView: MainView())
         let window = NSWindow(contentViewController: hosting)
-        window.title = "LGforMac"
+        window.title = "TVControlForMac"
         window.setContentSize(NSSize(width: 900, height: 640))
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.toolbarStyle = .unified
         window.titlebarSeparatorStyle = .automatic
         window.contentMinSize = NSSize(width: 780, height: 520)
-        window.setFrameAutosaveName("LGforMacMain")
+        window.setFrameAutosaveName("TVControlForMacMain")
         window.isReleasedWhenClosed = false
         self.init(window: window)
         window.delegate = self
     }
 
-    // Close hides to the background instead of quitting (parity with LGforWin's tray
-    // icon), and drops the Dock icon — a closed LGforMac is a plain menu bar app.
-    // Relaunching the app (or clicking the menu bar icon's "Open LGforMac") reopens it.
+    // Close hides to the background instead of quitting (parity with TVControlForWin's tray
+    // icon), and drops the Dock icon — a closed TVControlForMac is a plain menu bar app.
+    // Relaunching the app (or clicking the menu bar icon's "Open TVControlForMac") reopens it.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
         NSApp.setActivationPolicy(.accessory)

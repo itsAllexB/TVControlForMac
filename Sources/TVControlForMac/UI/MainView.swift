@@ -22,7 +22,7 @@ enum AppPage: String, CaseIterable, Identifiable {
     }
 }
 
-/// The main window: sidebar navigation over the six feature pages, mirroring LGforWin.
+/// The main window: sidebar navigation over the six feature pages, mirroring TVControlForWin.
 struct MainView: View {
     @State private var page: AppPage = .tvs
     private let state = AppState.shared
@@ -34,7 +34,7 @@ struct MainView: View {
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 200, max: 240)
             .safeAreaInset(edge: .bottom) {
-                Text("LGforMac \(state.appVersion)")
+                Text("TVControlForMac \(state.appVersion)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)

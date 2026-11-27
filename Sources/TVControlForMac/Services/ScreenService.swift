@@ -38,7 +38,7 @@ enum ScreenService {
     }
 
     /// Hardware UUID string for a screen — the macOS analogue of the EDID device path
-    /// LGforWin persists on Windows.
+    /// TVControlForWin persists on Windows.
     static func stableId(for screen: NSScreen) -> String? {
         guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
             return nil

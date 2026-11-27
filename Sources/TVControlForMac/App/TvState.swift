@@ -1,7 +1,7 @@
 import AppKit
 import Observation
 
-/// UI-facing wrapper around one TvDevice and its TvController (LGforWin's TvViewModel).
+/// UI-facing wrapper around one TvDevice and its TvController (TVControlForWin's TvViewModel).
 @MainActor
 @Observable
 final class TvState: Identifiable {
@@ -87,20 +87,18 @@ final class TvState: Identifiable {
         // displays are up. Unlinked TVs never gate, so they read as "connected".
         self.displayConnected = device.pairedScreenId.isEmpty || device.lastDisplayConnected
 
-        controller = TvController(device: device)
+        controller = TvControllerFactory.create(device)
         controller.getStartupBrightness = startupBrightness
 
         controller.onStatusChanged = { [weak self] status, message in
             Task { @MainActor in self?.handleStatus(status, message) }
         }
-        controller.onClientKeyUpdated = { [weak self] _ in
+        // Pairing credentials, the learned MAC for Wake-on-LAN.
+        controller.onDeviceChanged = { [weak self] in
             Task { @MainActor in self?.persist() }
         }
         controller.onBacklightReported = { [weak self] value in
             Task { @MainActor in self?.setBacklightQuietly(value) }
-        }
-        controller.onMacAddressResolved = { [weak self] _ in
-            Task { @MainActor in self?.persist() } // keep the learned MAC for WoL
         }
         controller.onPowerStateReported = { [weak self] state in
             Task { @MainActor in self?.handlePowerState(state) }
@@ -152,6 +150,8 @@ final class TvState: Identifiable {
             case .connecting: return "Connecting…"
             case .awaitingPairing: return "Accept the prompt on your TV"
             case .error: return "Error"
+            case .needsPairing: return "Not paired"
+            case .awaitingCode: return "Enter the code from the TV"
             case .disconnected: return "Disconnected"
             }
         }()

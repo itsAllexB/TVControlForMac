@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import Foundation
 
 /// A TV found on the LAN via SSDP, ready to be added by one click.
@@ -5,6 +6,7 @@ struct DiscoveredTv: Identifiable, Hashable {
     let name: String
     let host: String
     let model: String
+    var kind: TvKind = .webOs
     var id: String { host }
 }
 

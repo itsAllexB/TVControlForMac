@@ -122,7 +122,7 @@ struct PowerView: View {
         ) {
             GroupBox("Turn on") {
                 VStack(alignment: .leading, spacing: 10) {
-                    toggle("When LGforMac starts",
+                    toggle("When TVControlForMac starts",
                            "With launch-at-login enabled, that's when you sign in.",
                            \.onAppStart)
                     toggle("When the Mac wakes from sleep", nil, \.onResume)
@@ -249,7 +249,7 @@ struct OsdSettingsView: View {
                         set: { state.settings.osd.style = $0; state.saveSettings() }
                     )) {
                         Text("macOS — system pop-up under the menu bar").tag(0)
-                        Text("Windows — LGforWin-style pill").tag(1)
+                        Text("Windows — TVControlForWin-style pill").tag(1)
                     }
                     .pickerStyle(.radioGroup)
 
@@ -355,11 +355,11 @@ struct SettingsView: View {
                             if !on {
                                 dialogMessage = DialogMessage(
                                     title: "Menu bar icon hidden",
-                                    text: "LGforMac keeps running in the background. To open this window again, just launch LGforMac again — from Launchpad or Spotlight.")
+                                    text: "TVControlForMac keeps running in the background. To open this window again, just launch TVControlForMac again — from Launchpad or Spotlight.")
                             }
                         }
                     ))
-                    Text("Closing this window keeps the app running with no Dock icon — like any menu bar app. Without the icon, everything still works in the background; launch LGforMac again to reopen this window.")
+                    Text("Closing this window keeps the app running with no Dock icon — like any menu bar app. Without the icon, everything still works in the background; launch TVControlForMac again to reopen this window.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -400,7 +400,7 @@ struct SettingsView: View {
                             Label("Import settings…", systemImage: "square.and.arrow.down")
                         }
                     }
-                    Text("One JSON file with your TVs (including pairing keys), schedules and preferences. LGforWin backups import too.")
+                    Text("One JSON file with your TVs (including pairing keys), schedules and preferences. TVControlForWin backups import too.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -426,7 +426,7 @@ struct SettingsView: View {
     private func exportBackup() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "LGforMac-backup.json"
+        panel.nameFieldStringValue = "TVControlForMac-backup.json"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             do {

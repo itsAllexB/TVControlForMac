@@ -1,13 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import Foundation
 
-enum TvStatus {
-    case disconnected, connecting, awaitingPairing, connected, error
-}
-
-/// High-level controller for one TV: owns the WebOSClient, drives the connect/pair
+/// High-level controller for one LG webOS TV: owns the WebOSClient, drives the connect/pair
 /// lifecycle with auto-reconnect, and exposes a debounced setBacklight so dragging the
 /// slider doesn't flood the socket.
-final class TvController {
+final class WebOsController: TvController {
     private static let debounceMs = 120
     /// Cap on a single SSAP request, so a dead-but-open socket can't hang a caller forever.
     private static let requestTimeout: TimeInterval = 3
@@ -22,7 +19,7 @@ final class TvController {
     private var connectTask: Task<Void, Never>?
 
     private let gate = NSLock()
-    private let debounceQueue = DispatchQueue(label: "LGforMac.TvController.debounce")
+    private let debounceQueue = DispatchQueue(label: "TVControlForMac.WebOsController.debounce")
     private var debounceItem: DispatchWorkItem?
     private var pendingValue = 0
     private var hasPending = false
@@ -44,14 +41,23 @@ final class TvController {
 
     /// Fires (status, optional message) whenever the connection state changes.
     var onStatusChanged: ((TvStatus, String?) -> Void)?
-    /// Fires after a successful pairing with a new client-key to persist.
-    var onClientKeyUpdated: ((String) -> Void)?
+    /// Fires after a new client-key or the MAC address was stored on the device, to persist it.
+    var onDeviceChanged: (() -> Void)?
     /// Fires when the TV's current backlight is read, so the UI can sync the slider.
     var onBacklightReported: ((Int) -> Void)?
-    /// Fires after the TV's MAC address is learned via ARP, so it can be persisted for WoL.
-    var onMacAddressResolved: ((String) -> Void)?
     /// Fires when the TV reports a new power state ("Active", "Screen Off", "Suspend", …).
     var onPowerStateReported: ((String) -> Void)?
+
+    // OLED Light is always available on webOS: nothing to set up, nothing that changes.
+    var supportsBrightness: Bool { true }
+    var acceptsBrightness: Bool { true } // a value set while the TV is off is held (see setBacklight)
+    var brightnessSetup: BrightnessSetup { .ready }
+    var onCapabilitiesChanged: (() -> Void)?
+    func setUpBrightness() {}
+
+    // webOS pairs by itself: the TV shows an accept prompt during registration, no code to type.
+    func requestPairing() {}
+    func submitPairingCode(_ code: String) {}
 
     init(device: TvDevice) {
         self.device = device
@@ -87,13 +93,13 @@ final class TvController {
                 let client = try await connectWithFallback()
 
                 if device.clientKey.isEmpty {
-                    setStatus(.awaitingPairing, "Accept the prompt on your TV")
+                    setStatus(.awaitingPairing, "Accept the prompt on the TV")
                 }
 
                 let key = try await client.register(clientKey: device.clientKey.isEmpty ? nil : device.clientKey)
                 if !key.isEmpty && key != device.clientKey {
                     device.clientKey = key
-                    onClientKeyUpdated?(key)
+                    onDeviceChanged?()
                 }
 
                 setStatus(.connected)
@@ -158,10 +164,8 @@ final class TvController {
             }
         }
 
-        throw WebOSError.tvError(
-            "Can't reach the TV at \(device.host) on port 3000 or 3001. " +
-            "Check the IP, that the TV is on, and that network/mobile control is enabled. " +
-            (last.map { "(\($0.localizedDescription))" } ?? ""))
+        if let last { Log.write("\(device.host): unreachable on 3000 and 3001 (\(last.localizedDescription))") }
+        throw WebOSError.tvError("Can't reach the TV")
     }
 
     // Stays parked while the socket is healthy. A TV that loses power (or has its HDMI signal
@@ -189,7 +193,7 @@ final class TvController {
 
     private func onClientDisconnected() {
         if !disposed {
-            setStatus(.disconnected, "Reconnecting…")
+            setStatus(.disconnected, "Reconnecting")
         }
     }
 
@@ -400,7 +404,10 @@ final class TvController {
             if Task.isCancelled { return }
             if hasMac { await WakeOnLan.send(mac: device.macAddress) }
 
-            if let client, client.isConnected {
+            // Only once registered: a socket that's open but still mid-handshake refuses the
+            // query, which would read as "stale" and tear down a connection that's just
+            // forming (seen when "turn on when the app starts" fires as the app launches).
+            if let client, client.isConnected, status == .connected {
                 let state = await getPowerState()
                 if state == nil {
                     Log.write("\(device.host): no reply to getPowerState — stale socket, reconnecting")
@@ -418,7 +425,8 @@ final class TvController {
             do { try await Task.sleep(nanoseconds: UInt64(Self.wakeRetryDelay * 1_000_000_000)) }
             catch { return }
 
-            if let client, client.isConnected { return } // it came back on its own
+            // Round again even if a socket is open by now: only the TV's own answer, at the
+            // top of the loop, says whether it's awake, in standby, or just has its screen off.
         }
     }
 
@@ -426,7 +434,7 @@ final class TvController {
     // waitWhileConnected, which exits as soon as the client is gone.
     private func dropStaleClient() {
         cleanupClient()
-        if !disposed { setStatus(.disconnected, "Reconnecting…") }
+        if !disposed { setStatus(.disconnected, "Reconnecting") }
     }
 
     /// Turns the TV off if it's awake, wakes it if it isn't. Decided from the TV's own
@@ -439,7 +447,9 @@ final class TvController {
             return
         }
 
-        if state == nil, let client, client.isConnected { dropStaleClient() }
+        // Silence only means "stale" once registered: mid-handshake (or while the TV shows its
+        // accept prompt) the query is refused, and dropping the socket would restart pairing.
+        if state == nil, let client, client.isConnected, status == .connected { dropStaleClient() }
         await powerOn()
     }
 
@@ -471,7 +481,7 @@ final class TvController {
             guard let mac, !self.disposed else { return }
             self.device.macAddress = mac
             Log.write("\(host): MAC learned \(mac)")
-            self.onMacAddressResolved?(mac)
+            self.onDeviceChanged?()
         }
     }
 

@@ -1,27 +1,36 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import Foundation
 
 /// Hidden command-line mode for diagnostics — exercises the exact production services
 /// without the UI. Not shown in any help; used for development and troubleshooting.
 ///
-///   LGforMac --scan                 SSDP-discover TVs on the LAN
-///   LGforMac --probe <host>         connect, pair (stored key if known), report state
-///   LGforMac --set <host> <0-100>   connect, pair, set OLED Light
+///   TVControlForMac --scan                 SSDP-discover TVs on the LAN
+///   TVControlForMac --probe <host>         connect, pair (stored key if known), report state
+///   TVControlForMac --set <host> <0-100>   connect, pair, set OLED Light
 enum CliMode {
     static var isRequested: Bool {
         let args = CommandLine.arguments
-        return args.count >= 2
-            && ["--scan", "--probe", "--set", "--mac", "--raw", "--osd-preview"].contains(args[1])
+        guard args.count >= 2 else { return false }
+        return ["--scan", "--probe", "--set", "--mac", "--raw", "--osd-preview"].contains(args[1])
+            || AtvCli.commands.contains(args[1])
+            || AdbCli.commands.contains(args[1])
+            || UpdateCli.commands.contains(args[1])
     }
 
     static func runIfRequested() async -> Bool {
         let args = CommandLine.arguments
         guard args.count >= 2 else { return false }
 
+        let extra = Array(args.dropFirst())
+        if AtvCli.commands.contains(args[1]) { await AtvCli.run(extra); return true }
+        if AdbCli.commands.contains(args[1]) { await AdbCli.run(extra); return true }
+        if UpdateCli.commands.contains(args[1]) { await UpdateCli.run(extra); return true }
+
         switch args[1] {
         case "--scan":
-            print("Scanning for LG webOS TVs (about 4 s)…")
+            print("Scanning for TVs (about 4 s)…")
             let tvs = await SsdpDiscovery.findTvs { tv in
-                print("  found: \(tv.name)  \(tv.host)  \(tv.model)")
+                print("  found: \(tv.name)  \(tv.host)  \(tv.model)  [\(tv.kind.label)]")
             }
             print("\(tvs.count) TV(s) found.")
             return true
@@ -43,9 +52,9 @@ enum CliMode {
             return true
 
         case "--osd-preview":
-            // Asks a RUNNING LGforMac app to show the OSD preview (test/debug hook).
+            // Asks a RUNNING TVControlForMac app to show the OSD preview (test/debug hook).
             DistributedNotificationCenter.default().post(
-                name: .init("com.itsallexb.LGforMac.osd-preview"), object: nil)
+                name: .init("com.itsallexb.TVControlForMac.osd-preview"), object: nil)
             try? await Task.sleep(nanoseconds: 300_000_000) // let the notification deliver
             print("preview requested")
             return true
@@ -82,7 +91,7 @@ enum CliMode {
         let known = devices.first { $0.host.caseInsensitiveCompare(host) == .orderedSame }
         let device = known ?? TvDevice(name: "probe", host: host)
 
-        let controller = TvController(device: device)
+        let controller = WebOsController(device: device)
         let done = AsyncStream<Bool>.makeStream()
 
         controller.onStatusChanged = { status, message in
@@ -93,14 +102,13 @@ enum CliMode {
                 print("connected (\(device.secure ? "wss:3001" : "ws:3000"))")
                 done.continuation.yield(true)
             case .error: print("error: \(message ?? "?")"); done.continuation.yield(false)
-            case .disconnected: break
+            case .disconnected, .needsPairing, .awaitingCode: break
             }
         }
         controller.onBacklightReported = { value in print("backlight = \(value)") }
         controller.onPowerStateReported = { state in print("powerState = \(state)") }
-        controller.onMacAddressResolved = { mac in print("mac = \(mac)") }
-        controller.onClientKeyUpdated = { key in
-            print("client-key = \(key)")
+        controller.onDeviceChanged = {
+            print("client-key = \(device.clientKey.isEmpty ? "(none)" : "(set)")  mac = \(device.macAddress)")
             if known != nil { store.saveDevices(devices) } // persist re-pair for the app
         }
 

@@ -13,7 +13,7 @@ enum HotkeyOutcome {
 }
 
 /// Top-level app state: TVs, schedules, settings and hotkey routing — shared by the
-/// main window, the menu bar extra and the background services (LGforWin's MainViewModel).
+/// main window, the menu bar extra and the background services (TVControlForWin's MainViewModel).
 @MainActor
 @Observable
 final class AppState {
@@ -86,7 +86,7 @@ final class AppState {
         }
     }
 
-    let appVersion = "v1.0.0"
+    let appVersion = "v" + AppInfo.version
 
     // Background services (started once from the app delegate).
     @ObservationIgnored let hotkeys = HotkeyService()
@@ -132,7 +132,7 @@ final class AppState {
         // Hidden test/debug hook: `--osd-preview` posts this distributed notification so
         // the OSD can be exercised without clicking through the UI.
         DistributedNotificationCenter.default().addObserver(
-            forName: .init("com.itsallexb.LGforMac.osd-preview"), object: nil, queue: .main
+            forName: .init("com.itsallexb.TVControlForMac.osd-preview"), object: nil, queue: .main
         ) { _ in
             Task { @MainActor in AppState.shared.previewOsd() }
         }
@@ -285,7 +285,7 @@ final class AppState {
     }
 
     // Blocks the calling (main) thread briefly so the off commands make it onto the wire
-    // before the system finishes sleeping / logging out — same trick as LGforWin's
+    // before the system finishes sleeping / logging out — same trick as TVControlForWin's
     // TurnOffAllAsync().Wait(…). The sends themselves run off the main thread.
     private func turnOffAllBlocking(timeout: TimeInterval) {
         let controllers = automationTargets.map(\.controller)
@@ -485,7 +485,7 @@ final class AppState {
         saveSettings()
     }
 
-    // MARK: - Settings proxies (each setter persists immediately, like LGforWin)
+    // MARK: - Settings proxies (each setter persists immediately, like TVControlForWin)
 
     var startAtLogin: Bool {
         get { settings.startAtLogin }
@@ -546,7 +546,7 @@ final class AppState {
 
     // Hotkey modifiers (Control/Option/Shift/Command), combined with the Up/Down arrows.
     // At least one is always kept — a bare arrow hotkey would swallow every arrow press
-    // system-wide. Bit values match LGforWin: 1=Option(Alt), 2=Control(Ctrl), 4=Shift, 8=Command(Win).
+    // system-wide. Bit values match TVControlForWin: 1=Option(Alt), 2=Control(Ctrl), 4=Shift, 8=Command(Win).
     var hotkeyControl: Bool { get { hasMod(2) } set { setMod(2, newValue) } }
     var hotkeyOption: Bool { get { hasMod(1) } set { setMod(1, newValue) } }
     var hotkeyShift: Bool { get { hasMod(4) } set { setMod(4, newValue) } }
@@ -582,7 +582,7 @@ final class AppState {
     }
 
     /// Replaces all TVs and settings from a backup string and reloads live state.
-    /// Accepts LGforWin backups too — the format is identical.
+    /// Accepts TVControlForWin backups too — the format is identical.
     func importSettings(_ json: String) throws {
         let data = try store.deserializeBackup(json) // throws before we touch anything
         store.saveDevices(data.devices!)

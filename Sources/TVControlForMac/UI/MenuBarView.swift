@@ -25,7 +25,7 @@ struct MenuBarView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("No TVs yet")
                         .font(.headline)
-                    Text("Open LGforMac and click Find TVs to add your LG TV.")
+                    Text("Open TVControlForMac and click Find TVs to add your LG TV.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -39,7 +39,7 @@ struct MenuBarView: View {
             Divider()
 
             HStack {
-                Button("Open LGforMac") {
+                Button("Open TVControlForMac") {
                     (NSApp.delegate as? AppDelegate)?.showMainWindow()
                 }
                 Spacer()

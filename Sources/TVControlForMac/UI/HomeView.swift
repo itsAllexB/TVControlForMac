@@ -300,7 +300,7 @@ struct NetworkPermissionBanner: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Can't reach your TVs")
                     .font(.headline)
-                Text("If they're on, macOS may be blocking LGforMac's network access. Check Privacy & Security → Network (and Local Network) and enable LGforMac, or request the permission prompt again.")
+                Text("If they're on, macOS may be blocking TVControlForMac's network access. Check Privacy & Security → Network (and Local Network) and enable TVControlForMac, or request the permission prompt again.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

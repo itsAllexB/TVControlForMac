@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "LGforMac",
+    name: "TVControlForMac",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "LGforMac",
-            path: "Sources/LGforMac"
+            name: "TVControlForMac",
+            path: "Sources/TVControlForMac"
         )
     ]
 )

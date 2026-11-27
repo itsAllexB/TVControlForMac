@@ -48,7 +48,7 @@ func png(_ image: NSImage, pixels: Int) -> Data {
     return rep.representation(using: .png, properties: [:])!
 }
 
-let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("LGforMac.iconset")
+let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("TVControlForMac.iconset")
 try? FileManager.default.removeItem(at: tmp)
 try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
 
