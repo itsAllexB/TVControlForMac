@@ -24,7 +24,11 @@ final class OsdController {
     private static let msgHeight: CGFloat = 64
     private static let edgeMargin: CGFloat = 16
     private static let bottomMargin: CGFloat = 8
-    private static let slide: CGFloat = 20
+    private static let slideDistance: CGFloat = 20
+    // With Reduce Motion on, the pill only fades, as the system's own pop-ups do.
+    private static var slide: CGFloat {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : slideDistance
+    }
     private static let fadeIn: TimeInterval = 0.25
     private static let fadeOut: TimeInterval = 0.19
 
@@ -197,10 +201,7 @@ final class OsdController {
         }
 
         hideTimer?.invalidate()
-        hideTimer = Timer.scheduledTimer(withTimeInterval: max(0.5, min(5.0, timeout)),
-                                         repeats: false) { [weak self] _ in
-            Task { @MainActor in self?.beginHide() }
-        }
+        hideTimer = Self.mainTimer(after: max(0.5, min(5.0, timeout))) { [weak self] in self?.beginHide() }
     }
 
     private func beginHide() {
@@ -268,6 +269,18 @@ final class OsdController {
 
         self.panel = panel
         return panel
+    }
+
+    /// A one-shot timer on the main run loop, for hiding an OSD. It acts in the timer's own
+    /// callback: hopping to a task first would let a show that arrives in between be hidden
+    /// at once, since invalidating a timer that has already fired cancels nothing. And it
+    /// runs in the common modes, so the OSD still goes while a slider is being dragged.
+    static func mainTimer(after interval: TimeInterval, _ action: @escaping @MainActor () -> Void) -> Timer {
+        let timer = Timer(timeInterval: interval, repeats: false) { _ in
+            MainActor.assumeIsolated { action() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        return timer
     }
 }
 
