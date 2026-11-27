@@ -11,8 +11,12 @@ import Foundation
 /// effect for it afterwards. (If a TV is still off at that moment, its controller holds
 /// the value and delivers it when the TV comes back.)
 final class ScheduleService {
-    // Ticks are 20s apart; anything much longer means the process was suspended.
-    private static let gapThreshold: TimeInterval = 90
+    // Ticks are 20s apart. A schedule's minute can only pass without a tick in it if two
+    // ticks are more than 60 s apart (one before the minute starts, the next after it
+    // ends), so every gap over a minute is checked. A gap that's only a slow main thread
+    // costs nothing: the catch-up acts only if a schedule's time fell inside it. At 90 s, a
+    // short sleep of 61–90 s could skip a schedule.
+    static let gapThreshold: TimeInterval = 60
 
     /// The current schedule list (called on the main thread).
     var getSchedules: () -> [BrightnessSchedule] = { [] }

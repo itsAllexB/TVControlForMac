@@ -65,6 +65,12 @@ enum SelfTestCli {
         check("catch-up: the gap is (from, to]: ending on a schedule's minute counts, starting on it doesn't",
               RuleTargets.anyFires([morning], between: date(27, 7, 0), and: date(27, 8, 0))
               && !RuleTargets.anyFires([morning], between: date(27, 8, 0), and: date(27, 9, 0)))
+        // Ticks 61 s apart can straddle a whole minute (07:59:59.5 → 08:01:00.5): such a gap
+        // has to be one the service checks.
+        let straddle = date(27, 7, 59).addingTimeInterval(59.5)
+        check("catch-up: a 61 s pause over a schedule's whole minute is caught",
+              straddle.addingTimeInterval(61).timeIntervalSince(straddle) > ScheduleService.gapThreshold
+              && RuleTargets.anyFires([morning], between: straddle, and: straddle.addingTimeInterval(61)))
         check("catch-up: a TV isn't touched because of another TV's schedule",
               RuleTargets.catchUpBrightness(all, tvId: "b", from: date(27, 21, 0), to: date(27, 22, 0)) == nil)
         check("catch-up: the TV it targets gets the value now in effect",
