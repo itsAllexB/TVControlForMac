@@ -15,7 +15,8 @@ Ideas and next steps after **v3.0**.
 - [x] README rewritten for end users, `docs/development.md`, `CONTRIBUTING.md`. Licence is
       now AGPL-3.0-or-later.
 - [ ] **GitHub repository renamed** to TVControlForMac and the first 3.0 release cut.
-- [ ] **Screenshots** of the Mac app for the README (`docs/images/`).
+- [x] **Screenshots** of the Mac app for the README (`docs/images/`). Retake the Home
+      one with an LG and a Google TV both connected.
 
 ## Features
 - [x] **SSDP auto-discovery**: finds LG and Google TVs on the network.
