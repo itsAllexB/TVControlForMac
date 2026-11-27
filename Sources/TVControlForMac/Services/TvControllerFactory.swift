@@ -10,8 +10,7 @@ enum TvControllerFactory {
     static func create(_ device: TvDevice) -> TvController {
         switch device.kind {
         case .androidTv:
-            // TODO(google-tv): return AndroidTvController(device: device) once it exists.
-            return WebOsController(device: device)
+            return AndroidTvController(device: device)
         case .webOs:
             return WebOsController(device: device)
         }
