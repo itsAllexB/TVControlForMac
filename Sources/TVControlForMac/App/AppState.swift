@@ -590,9 +590,11 @@ final class AppState {
     // Schedule catch-up when a TV's brightness first becomes usable this session: the
     // schedule in effect for that TV now, or nil when catch-up is off or no schedule
     // targets it. A TV whose automation is paused holds it for display-reconnect instead;
-    // its user isn't looking at it right now.
+    // its user isn't looking at it right now. Not after an update: the app only blinked,
+    // and a brightness changed since the last schedule ran should stay (as "turn on when
+    // the app starts" is skipped then too).
     private func startupBrightness(for device: TvDevice) -> Int? {
-        guard settings.applyScheduleOnStartup,
+        guard settings.applyScheduleOnStartup, !AppInfo.launchedAfterUpdate,
               let value = RuleTargets.scheduledBrightness(settings.schedules, tvId: device.id) else { return nil }
         if let tv = tvs.first(where: { $0.device === device }), !tv.automationAllowed {
             tv.missedScheduleWhileDisconnected = true
