@@ -18,6 +18,8 @@ enum SelfTestCli {
         power()
         hotkeys()
         files()
+        legacyFiles()
+        interop()
         print(failures == 0 ? "All checks passed." : "\(failures) check(s) FAILED.")
         if failures > 0 { exit(1) }
     }
@@ -60,6 +62,9 @@ enum SelfTestCli {
               RuleTargets.anyFires([morning], between: date(26, 23, 0), and: date(27, 8, 0)))
         check("catch-up: a day or more means every schedule fired",
               RuleTargets.anyFires([morning], between: date(25, 9, 0), and: date(26, 9, 30)))
+        check("catch-up: the gap is (from, to]: ending on a schedule's minute counts, starting on it doesn't",
+              RuleTargets.anyFires([morning], between: date(27, 7, 0), and: date(27, 8, 0))
+              && !RuleTargets.anyFires([morning], between: date(27, 8, 0), and: date(27, 9, 0)))
         check("catch-up: a TV isn't touched because of another TV's schedule",
               RuleTargets.catchUpBrightness(all, tvId: "b", from: date(27, 21, 0), to: date(27, 22, 0)) == nil)
         check("catch-up: the TV it targets gets the value now in effect",
@@ -207,5 +212,92 @@ enum SelfTestCli {
               && again?.settings?.lastUpdateCheckUtc == expected)
         check("files: something that isn't a backup is refused",
               (try? store.deserializeBackup("[1, 2, 3]")) == nil)
+        // Importing replaces every TV and setting, so a JSON file picked by mistake (any
+        // object with neither "Devices" nor "Settings") must not count as an empty backup.
+        check("files: a JSON object with neither Devices nor Settings is refused",
+              (try? store.deserializeBackup(#"{ "name": "something else", "version": 1 }"#)) == nil)
+    }
+
+    // Files as LGforMac 1.0 wrote them: what the first launch after the rename copies over
+    // from ~/Library/Application Support/LGforMac. No ids, no kinds, no schedule targets.
+    private static func legacyFiles() {
+        let devices = """
+        [ { "Name": "Desk OLED", "Host": "192.168.1.159", "ClientKey": "k1", "LastBacklight": 35,
+            "PairedScreenId": "37D8832A-2D66-02CA-B9F7-8F30A301B230", "PairedScreenName": "LG TV SSCR2",
+            "AutomationOnlyWhenConnected": true, "LastDisplayConnected": false,
+            "Secure": true, "MacAddress": "AA:BB:CC:DD:EE:FF,11:22:33:44:55:66" } ]
+        """
+        let settings = """
+        { "HotkeyStep": 7, "HotkeyModifiers": 9, "StartWithWindows": true, "LaunchBehavior": 2,
+          "ShowMenuBarIcon": false, "ThemeIndex": 1,
+          "Schedules": [ { "Hour": 21, "Minute": 0, "Brightness": 20, "Enabled": true } ],
+          "ApplyScheduleOnStartup": true,
+          "Osd": { "Enabled": true, "Style": 1, "Position": 5, "Monitor": 2, "TimeoutSeconds": 3,
+                   "ShowTvName": true, "ShowOnSchedule": true },
+          "Power": { "OnAppStart": true, "OnResume": true, "OffOnSleep": true, "OffOnShutdown": false,
+                     "FollowDisplayOff": true, "DisplayOffAction": 1, "FollowDisplayOn": true } }
+        """
+
+        let tv = (try? JSONDecoder().decode([TvDevice].self, from: Data(devices.utf8)))?.first
+        check("legacy: an LGforMac 1.0 devices.json loads as an LG with a new id",
+              tv?.kind == .webOs && tv?.idWasAssigned == true && !(tv?.id.isEmpty ?? true) && tv?.power == nil)
+        check("legacy: pairing, wake and display link carry over",
+              tv?.clientKey == "k1" && tv?.secure == true && tv?.macAddress == "AA:BB:CC:DD:EE:FF,11:22:33:44:55:66"
+              && tv?.lastBacklight == 35 && tv?.pairedScreenName == "LG TV SSCR2")
+        check("legacy: \"Automate only while connected\" and its presence snapshot carry over",
+              tv?.automationOnlyWhenConnected == true && tv?.lastDisplayConnected == false)
+
+        let s = try? JSONDecoder().decode(AppSettings.self, from: Data(settings.utf8))
+        check("legacy: an LGforMac 1.0 settings.json loads",
+              s?.hotkeyStep == 7 && s?.hotkeyModifiers == 9 && s?.startAtLogin == true
+              && s?.launchBehavior == 2 && s?.showMenuBarIcon == false && s?.applyScheduleOnStartup == true)
+        check("legacy: old schedules apply to all TVs, the hotkey follows the pointer",
+              s?.schedules.count == 1 && s?.schedules.first?.tvIds.isEmpty == true && s?.hotkeyTarget == "")
+        check("legacy: OSD style and a whole-number duration load",
+              s?.osd.style == 1 && s?.osd.timeoutSeconds == 3.0 && s?.osd.position == 5)
+        check("legacy: shared power rules load, updates default to on",
+              s?.power.offOnSleep == true && s?.power.displayOffAction == 1
+              && s?.checkForUpdates == true && s?.installUpdatesAutomatically == true && s?.lastUpdateCheckUtc == nil)
+    }
+
+    // What this app writes has to be readable by TVControlForWin (System.Text.Json: keys are
+    // case-sensitive, enums are numbers, DateTime wants ISO 8601), and what it reads has to
+    // cover what .NET can write.
+    private static func interop() {
+        let expected = ISO8601DateFormatter().date(from: "2026-11-26T18:29:10Z")
+        let dates: [(String, String)] = [
+            ("no fraction", "2026-11-26T18:29:10Z"),
+            ("an offset", "2026-11-26T20:29:10+02:00"),
+            ("a fraction and an offset", "2026-11-26T20:29:10.1234567+02:00"),
+        ]
+        for (what, text) in dates {
+            let json = #"{ "LastUpdateCheckUtc": "\#(text)" }"#
+            let loaded = try? JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+            check("interop: a timestamp with \(what) is read", loaded?.lastUpdateCheckUtc == expected)
+        }
+
+        let nulls = #"[ { "Id": "abc", "Name": null, "Host": "10.0.0.3", "Kind": 1, "PairedScreenId": null, "Power": null } ]"#
+        let tv = (try? JSONDecoder().decode([TvDevice].self, from: Data(nulls.utf8)))?.first
+        check("interop: explicit nulls load as defaults",
+              tv?.name == "Google TV" && tv?.pairedScreenId == "" && tv?.power == nil && tv?.kind == .androidTv)
+
+        var settings = AppSettings()
+        settings.lastUpdateCheckUtc = expected
+        var schedule = BrightnessSchedule()
+        schedule.tvIds = ["abc"]
+        settings.schedules = [schedule]
+        let device = TvDevice(name: "Studio", host: "10.0.0.3", kind: .androidTv)
+        let backup = DeviceStore().serializeBackup(devices: [device], settings: settings)
+        let root = (try? JSONSerialization.jsonObject(with: Data(backup.utf8))) as? [String: Any]
+        let written = root?["Settings"] as? [String: Any]
+        let writtenTv = (root?["Devices"] as? [[String: Any]])?.first
+        let stamp = written?["LastUpdateCheckUtc"] as? String ?? ""
+        check("interop: the backup uses TVControlForWin's top-level and settings keys",
+              written?["StartWithWindows"] is Bool && written?["HotkeyTarget"] is String
+              && ((written?["Schedules"] as? [[String: Any]])?.first?["TvIds"] as? [String]) == ["abc"])
+        check("interop: a TV's kind is written as a number, its id as a string",
+              (writtenTv?["Kind"] as? NSNumber)?.intValue == 1 && writtenTv?["Id"] as? String == device.id)
+        check("interop: the update timestamp is written the way .NET reads it",
+              stamp.range(of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$"#, options: .regularExpression) != nil)
     }
 }
