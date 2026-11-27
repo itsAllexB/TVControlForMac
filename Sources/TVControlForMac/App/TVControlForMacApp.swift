@@ -39,6 +39,8 @@ struct TVControlForMacApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var windowController: MainWindowController?
+    /// App updates: the daily check, and the Settings page's "Updates" section.
+    private(set) var updates: UpdateManager?
     /// Set once services are running; a duplicate instance that terminates early must NOT
     /// run the shutdown path (its fresh AppState would overwrite the primary's state files).
     private var started = false
@@ -47,7 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Single instance: a second launch just surfaces the one already running.
         let running = NSRunningApplication.runningApplications(
             withBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.itsallexb.TVControlForMac")
-        if running.count > 1 {
+        // A trial run on its own data folder runs alongside the normal copy (AppPaths.isTrialRun).
+        if running.count > 1 && !AppPaths.isTrialRun {
             running.first { $0 != .current }?.activate()
             NSApp.terminate(nil)
             return
@@ -57,9 +60,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state.start()
         started = true
 
+        let updates = UpdateManager(
+            settings: { AppState.shared.settings },
+            modifySettings: { change in
+                change(&AppState.shared.settings)
+                AppState.shared.saveSettings()
+            },
+            isMainWindowOpen: { [weak self] in self?.windowController?.window?.isVisible == true },
+            quitForUpdate: { NSApp.terminate(nil) })
+        self.updates = updates
+        updates.start()
+
         // Manual launches always open the window; the launch-behavior preference applies
         // only to the at-login autostart launch (tagged with --autostart by the agent).
-        let behavior = AutostartService.isAutostartLaunch ? state.settings.launchBehavior : 0
+        // Coming back from an unattended update, the app returns to the background it was in.
+        let behavior = AppInfo.launchedInBackground ? 2
+            : AutostartService.isAutostartLaunch ? state.settings.launchBehavior : 0
         switch behavior {
         case 2:
             break // in the background — stays an accessory (no window, no Dock icon)
@@ -84,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         guard started else { return }
+        updates?.dispose()
         AppState.shared.shutdown()
     }
 
@@ -95,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if windowController == nil {
             windowController = MainWindowController()
+            windowController?.onClose = { [weak self] in self?.updates?.windowClosed() }
         }
         windowController?.showWindow(nil)
         if activate {
@@ -111,6 +129,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// under our control.
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
+    /// Called after the window was closed to the background.
+    var onClose: (() -> Void)?
+
     convenience init() {
         let hosting = NSHostingController(rootView: MainView())
         let window = NSWindow(contentViewController: hosting)
@@ -132,6 +153,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
         NSApp.setActivationPolicy(.accessory)
+        onClose?() // a downloaded update can go in now
         return false
     }
 }
