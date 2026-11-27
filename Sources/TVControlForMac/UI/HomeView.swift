@@ -125,7 +125,9 @@ private struct TvGroup: View {
     var body: some View {
         Section {
             header
-            if tv.supportsBrightness {
+            // Not while the TV wants pairing again: brightness over ADB may still be set up,
+            // but nothing reaches the TV until it's paired, so the slider would do nothing.
+            if tv.supportsBrightness && !tv.showsPairing {
                 brightnessRow
             }
             if tv.showsPairing {
@@ -241,7 +243,7 @@ private struct TvGroup: View {
         SettingRow("Pair with this TV",
                    subtitle: tv.awaitingCode ? nil : "The TV will show a code to type here") {
             if tv.awaitingCode {
-                TextField("Code", text: $tv.pairingCode)
+                TextField("Code", text: $tv.pairingCode, prompt: Text("Code"))
                     .textFieldStyle(.roundedBorder)
                     .labelsHidden()
                     .frame(width: 90)

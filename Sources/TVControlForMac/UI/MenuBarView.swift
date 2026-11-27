@@ -75,7 +75,7 @@ private struct MenuBarTvRow: View {
                         .help("Automation is paused while its display isn't connected")
                 }
                 Spacer()
-                Text(tv.supportsBrightness ? "\(tv.backlight)%" : note)
+                Text(hasSlider ? "\(tv.backlight)%" : note)
                     .font(.system(size: 11, weight: .medium))
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -89,7 +89,7 @@ private struct MenuBarTvRow: View {
                 .help("Turn on or off")
                 .accessibilityLabel("Turn \(tv.name) on or off")
             }
-            if tv.supportsBrightness {
+            if hasSlider {
                 HStack(spacing: 8) {
                     Image(systemName: "sun.min")
                         .font(.system(size: 10))
@@ -108,6 +108,9 @@ private struct MenuBarTvRow: View {
         }
         .padding(.vertical, 2)
     }
+
+    // As on the Home page: no slider while the TV wants pairing (again).
+    private var hasSlider: Bool { tv.supportsBrightness && !tv.showsPairing }
 
     // What stands in for the percentage on a TV without a slider.
     private var note: String {
