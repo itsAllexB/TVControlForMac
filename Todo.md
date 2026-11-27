@@ -35,7 +35,7 @@ Ideas and next steps after **v3.0**.
 - [ ] **Sunrise and sunset**: schedule brightness to the sun instead of fixed clock times.
 - [x] **Per-TV schedule targeting**: each schedule picks its TVs, or all of them.
 - [x] **Per-TV power rules**: a TV follows the shared rules or has its own.
-- [x] **Hotkey target**: the TV under the pointer, all TVs, or one fixed TV.
+- [x] **Shortcut target**: the TV under the pointer, all TVs, or one fixed TV.
 - [x] **Linked displays**: each TV knows its display, **Identify Displays** shows which is
       which, and **Automate only while connected** leaves a TV alone while a MacBook is
       away from it.
@@ -76,6 +76,17 @@ volume and brightness pop-up. Known gaps and leads:
       MonitorControl), but the value bar reportedly doesn't follow. Retest from the app,
       not a sandboxed command-line run, where the XPC lookup was denied.
 
+## Updater hardening
+- [ ] Limit how much a release zip may unpack to, so a hostile release can't fill the disk
+      before the signature is checked.
+- [ ] Remember a release that failed its checks, instead of downloading it again each day,
+      and point to the download page for it.
+- [ ] If the app takes more than a minute to quit, the swap helper gives up without
+      restarting it. Start the old version again in that case.
+- [ ] A swap inside `/Applications` under macOS's App Management protection is untested.
+- [ ] A way to move to a new signing certificate (Developer ID) without stranding copies
+      signed with the current one.
+
 ## Maybe / later
 - [ ] Show a TV's power state in the menu bar icon, as well as on the Home page.
-- [ ] Optional per-TV hotkey combinations, in addition to the pointer targeting.
+- [ ] Optional per-TV shortcuts, in addition to the pointer targeting.
