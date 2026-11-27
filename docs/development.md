@@ -237,7 +237,7 @@ Source paths are under `Sources/TVControlForMac/`.
 |------|---------|
 | `Services/TvController.swift`, `TvControllerFactory.swift` | What every TV driver offers; creating the right one, and brand detection |
 | `Services/WebOSClient.swift`, `WebOsController.swift`, `SsapPayloads.swift` | LG: the WebSocket, and per-TV lifecycle, reconnect, power, brightness |
-| `Services/AndroidTvRemoteClient.swift`, `AndroidTvController.swift`, `AndroidTvIdentity.swift`, `ProtoWire.swift` | Google TV: TLS, the client certificate, code pairing, the remote connection, power |
+| `Services/AndroidTvRemoteClient.swift`, `AndroidTvController.swift`, `AndroidTvIdentity.swift`, `Pkcs12.swift`, `ProtoWire.swift` | Google TV: TLS, the client certificate and its PKCS#12 form, code pairing, the remote connection, power |
 | `Services/AdbClient.swift`, `AdbBrightness.swift`, `AdbTclBacklight.swift` | Google TV brightness over ADB |
 | `Services/RuleTargets.swift` | Which TVs a schedule, power rule or hotkey applies to (pure logic) |
 | `Services/ScheduleService.swift`, `PowerEventService.swift`, `HotkeyService.swift` | Schedules, the Mac's sleep, wake, display and shutdown events, global hotkeys |
