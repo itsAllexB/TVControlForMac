@@ -333,6 +333,7 @@ private enum AtvSelfTest {
         identities(made)
         await tlsLoopback()
         await fakeTvScenario()
+        await refusalCountScenario()
         if slow { await silentTvScenario() }
         print("\(passed) passed, \(failed) failed")
         if failed > 0 { exit(1) }
@@ -802,6 +803,41 @@ private enum AtvSelfTest {
                 try await Task.sleep(nanoseconds: 50_000_000)
             }
             return weakOther == nil && tv.openPairingConnections < open
+        }
+    }
+
+    /// Two refusals with the TV out of reach between them (one odd handshake, then days of
+    /// the TV being away) mustn't add up to "Needs pairing again".
+    private static func refusalCountScenario() async {
+        guard let (credential, pfx) = try? AndroidTvIdentity.createClientCertificate() else { return }
+        let device = TvDevice(name: "Fake", host: "127.0.0.1", kind: .androidTv)
+        device.clientCertificate = pfx
+        let controller = AndroidTvController(device: device)
+        defer { controller.dispose() }
+        let log = StatusLog()
+        controller.onStatusChanged = { log.add($0, $1) }
+
+        await checkAsync("refusals: one, then the TV out of reach, then one more keeps the pairing") {
+            let first = try await FakeTv.start()
+            first.trust(credential.certificateDer, on: true)
+            controller.start()
+            guard await log.waitFor(.connected) else { first.stop(); return false }
+            first.rejectAll = true
+            first.dropConnections()
+            // The drop is a plain close; the reconnect after it is the first refusal.
+            let dropped = await log.waitFor(.disconnected, "Reconnecting")
+            let refused = await log.waitFor(.disconnected, "Reconnecting") && dropped
+            first.stop() // gone from the network: the next attempts are refused at TCP
+            let away = await log.waitFor(.disconnected, "Can't reach the TV", timeout: 10)
+
+            let second = try await FakeTv.start()
+            defer { second.stop() }
+            second.rejectAll = true
+            let refusedAgain = await log.waitFor(.disconnected, "Reconnecting", timeout: 20)
+            let kept = !device.clientCertificate.isEmpty
+            // Two in a row from here on do count.
+            let unpaired = await log.waitFor(.needsPairing, "Needs pairing again", timeout: 20)
+            return refused && away && refusedAgain && kept && unpaired && device.clientCertificate.isEmpty
         }
     }
 
