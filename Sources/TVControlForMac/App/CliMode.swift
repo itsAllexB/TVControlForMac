@@ -15,6 +15,7 @@ enum CliMode {
             || AtvCli.commands.contains(args[1])
             || AdbCli.commands.contains(args[1])
             || UpdateCli.commands.contains(args[1])
+            || SelfTestCli.commands.contains(args[1])
     }
 
     static func runIfRequested() async -> Bool {
@@ -25,6 +26,7 @@ enum CliMode {
         if AtvCli.commands.contains(args[1]) { await AtvCli.run(extra); return true }
         if AdbCli.commands.contains(args[1]) { await AdbCli.run(extra); return true }
         if UpdateCli.commands.contains(args[1]) { await UpdateCli.run(extra); return true }
+        if SelfTestCli.commands.contains(args[1]) { await SelfTestCli.run(extra); return true }
 
         switch args[1] {
         case "--scan":

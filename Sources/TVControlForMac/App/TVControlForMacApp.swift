@@ -31,7 +31,7 @@ struct TVControlForMacApp: App {
         )) {
             MenuBarView()
         } label: {
-            Image(systemName: "sun.max.fill")
+            Image(systemName: "tv")
         }
         .menuBarExtraStyle(.window)
     }

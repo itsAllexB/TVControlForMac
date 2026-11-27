@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import AppKit
 
 /// A connected display, identified by a stable id and its friendly name.

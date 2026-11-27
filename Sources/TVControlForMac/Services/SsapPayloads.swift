@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import Foundation
 
 /// Constant SSAP URIs and the standard webOS registration ("hello") payload.

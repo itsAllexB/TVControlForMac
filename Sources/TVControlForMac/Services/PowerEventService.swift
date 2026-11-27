@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import AppKit
 
 /// Surfaces the macOS power lifecycle as callbacks: system sleep/wake, the displays

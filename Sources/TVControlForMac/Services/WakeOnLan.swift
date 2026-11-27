@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import Foundation
 
 /// Wake-on-LAN: resolves a TV's MAC address while it's reachable (ARP cache), and later
