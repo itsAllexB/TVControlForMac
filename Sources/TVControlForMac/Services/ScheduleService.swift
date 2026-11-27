@@ -1,29 +1,30 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import Foundation
 
-/// Polls once per ~20s and applies any enabled schedule whose time matches the current
-/// minute, exactly once per occurrence. Applies the target brightness to all TVs.
+/// Polls once per ~20s and fires any enabled schedule whose time matches the current
+/// minute, exactly once per occurrence. Which TVs a schedule changes is the owner's
+/// business (see `AppState.applySchedule`).
 ///
-/// The minute-match means a schedule whose time passes while the timer isn't ticking —
-/// Mac asleep — would silently never fire. So each tick also watches for a gap since the
-/// previous tick, and applies the schedule that should be in effect after one. (If the
-/// TVs are still off at that moment, TvController holds the value and delivers it when
-/// they come back.)
+/// The minute-match means a schedule whose time passes while the timer isn't ticking
+/// (Mac asleep) would silently never fire. So each tick also watches for a gap since the
+/// previous tick, and reports it so each TV can be set to the schedule that should be in
+/// effect for it afterwards. (If a TV is still off at that moment, its controller holds
+/// the value and delivers it when the TV comes back.)
 final class ScheduleService {
     // Ticks are 20s apart; anything much longer means the process was suspended.
     private static let gapThreshold: TimeInterval = 90
 
     /// The current schedule list (called on the main thread).
     var getSchedules: () -> [BrightnessSchedule] = { [] }
-    /// The brightness that should currently be in effect, per AppState's wrap-around rule.
-    var getCurrentScheduledBrightness: () -> Int? = { nil }
-    /// Applies a brightness to every TV (called on the main thread).
-    var applyBrightnessAll: (Int) -> Void = { _ in }
-    /// Raised after a schedule applies its brightness (value in %), for the OSD.
-    var onScheduleApplied: ((Int) -> Void)?
+    /// One schedule's time has come (called on the main thread).
+    var onFire: (BrightnessSchedule) -> Void = { _ in }
+    /// The app slept through (from, to] and at least one schedule's time fell inside it
+    /// (called on the main thread).
+    var onCatchUp: (_ from: Date, _ to: Date) -> Void = { _, _ in }
 
     private var timer: Timer?
     private var minuteKey = ""
-    private var firedThisMinute = Set<Int>()
+    private var firedThisMinute = Set<UUID>()
     private var lastTick: Date?
 
     func start() {
@@ -35,16 +36,14 @@ final class ScheduleService {
 
     private func tick() {
         let now = Date()
+        let schedules = getSchedules()
 
         let previousTick = lastTick
         lastTick = now
         if let previous = previousTick, now.timeIntervalSince(previous) > Self.gapThreshold,
-           anyScheduleFires(between: previous, and: now) {
+           RuleTargets.anyFires(schedules, between: previous, and: now) {
             Log.write("schedule: catching up after a \(Int(now.timeIntervalSince(previous) / 60)) min gap (Mac was asleep)")
-            if let value = getCurrentScheduledBrightness() {
-                applyBrightnessAll(value)
-                onScheduleApplied?(value)
-            }
+            onCatchUp(previous, now)
         }
 
         let calendar = Calendar.current
@@ -56,36 +55,15 @@ final class ScheduleService {
             firedThisMinute.removeAll()
         }
 
-        let schedules = getSchedules()
-        for (index, schedule) in schedules.enumerated() {
+        for schedule in schedules {
             if schedule.enabled && schedule.hour == hour && schedule.minute == minute
-                && firedThisMinute.insert(index).inserted {
-                applyBrightnessAll(schedule.brightness)
-                onScheduleApplied?(schedule.brightness)
-                Log.write(String(format: "schedule %02d:%02d fired -> %d%%",
-                                 schedule.hour, schedule.minute, schedule.brightness))
+                && firedThisMinute.insert(schedule.id).inserted {
+                let targets = schedule.tvIds.isEmpty ? "all TVs" : "\(schedule.tvIds.count) chosen TV(s)"
+                Log.write(String(format: "schedule %02d:%02d fired -> %d%% (%@)",
+                                 schedule.hour, schedule.minute, schedule.brightness, targets))
+                onFire(schedule)
             }
         }
-    }
-
-    // True when at least one enabled schedule's daily time falls inside (from, to] —
-    // i.e. it would have fired during that window had the Mac been awake.
-    private func anyScheduleFires(between from: Date, and to: Date) -> Bool {
-        let enabled = getSchedules().filter(\.enabled)
-        if enabled.isEmpty { return false }
-        if to.timeIntervalSince(from) >= 86_400 { return true } // slept a day+ — every schedule passed
-
-        let calendar = Calendar.current
-        for schedule in enabled {
-            // First occurrence of this schedule's time strictly after `from`.
-            var occurrence = calendar.date(bySettingHour: schedule.hour, minute: schedule.minute,
-                                           second: 0, of: from) ?? from
-            if occurrence <= from {
-                occurrence = calendar.date(byAdding: .day, value: 1, to: occurrence) ?? occurrence
-            }
-            if occurrence <= to { return true }
-        }
-        return false
     }
 
     func dispose() {

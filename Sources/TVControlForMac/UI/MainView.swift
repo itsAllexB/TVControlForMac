@@ -1,19 +1,26 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import SwiftUI
 
 enum AppPage: String, CaseIterable, Identifiable {
-    case tvs = "TVs"
-    case schedules = "Schedules"
-    case power = "Power"
-    case hotkeys = "Hotkeys"
-    case osd = "On-screen display"
-    case settings = "Settings"
+    case home, schedule, power, hotkeys, osd, settings
 
     var id: String { rawValue }
 
+    var title: String {
+        switch self {
+        case .home: "Home"
+        case .schedule: "Schedule"
+        case .power: "Power"
+        case .hotkeys: "Hotkeys"
+        case .osd: "On-Screen Display"
+        case .settings: "Settings"
+        }
+    }
+
     var icon: String {
         switch self {
-        case .tvs: "tv"
-        case .schedules: "clock"
+        case .home: "tv"
+        case .schedule: "clock"
         case .power: "power"
         case .hotkeys: "keyboard"
         case .osd: "rectangle.on.rectangle"
@@ -22,57 +29,55 @@ enum AppPage: String, CaseIterable, Identifiable {
     }
 }
 
-/// The main window: sidebar navigation over the six feature pages, mirroring TVControlForWin.
+/// The main window: a sidebar over the six pages.
 struct MainView: View {
-    @State private var page: AppPage = .tvs
-    private let state = AppState.shared
+    @Bindable private var state = AppState.shared
 
     var body: some View {
         NavigationSplitView {
-            List(AppPage.allCases, selection: Binding(get: { page }, set: { page = $0 ?? .tvs })) { item in
-                Label(item.rawValue, systemImage: item.icon).tag(item)
+            List(AppPage.allCases, selection: Binding(get: { state.page }, set: { state.page = $0 ?? .home })) { item in
+                HStack {
+                    Label(item.title, systemImage: item.icon)
+                    // A dot on Settings says an update is waiting there.
+                    if item == .settings && state.updateReady {
+                        Spacer()
+                        Circle()
+                            .fill(.tint)
+                            .frame(width: 7, height: 7)
+                            .accessibilityLabel("Update ready")
+                    }
+                }
+                .tag(item)
             }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 200, max: 240)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 205, max: 250)
             .safeAreaInset(edge: .bottom) {
-                Text("TVControlForMac \(state.appVersion)")
+                Text("Version \(AppInfo.version)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
             }
         } detail: {
-            switch page {
-            case .tvs: HomeView()
-            case .schedules: SchedulesView()
+            switch state.page {
+            case .home: HomeView()
+            case .schedule: ScheduleView()
             case .power: PowerView()
             case .hotkeys: HotkeysView()
             case .osd: OsdSettingsView()
             case .settings: SettingsView()
             }
         }
-        .frame(minWidth: 780, minHeight: 520)
-    }
-}
-
-/// Shared page chrome: large title + description, scrollable content column.
-struct PageScaffold<Content: View>: View {
-    let title: String
-    let subtitle: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.largeTitle.bold())
-                    Text(subtitle).font(.callout).foregroundStyle(.secondary)
-                }
-                content
+        // Pages without buttons of their own still get a toolbar, so the title bar is the
+        // same height on every page.
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Color.clear.frame(width: 1, height: 1).accessibilityHidden(true)
             }
-            .padding(24)
-            .frame(maxWidth: 720, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .onChange(of: state.page, initial: true) {
+            (NSApp.delegate as? AppDelegate)?.setWindowTitle(state.page.title)
+        }
+        .frame(minWidth: 760, minHeight: 500)
     }
 }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import SwiftUI
 
 // The entry point must be SYNCHRONOUS: an async main() would run NSApplicationMain
@@ -21,7 +22,7 @@ struct TVControlForMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        // isInserted honors the "Show the menu bar icon" setting; the getter runs inside
+        // isInserted honors the "Show menu bar icon" setting; the getter runs inside
         // SwiftUI's observation tracking, so toggling it inserts/removes the item live.
         // The setter also covers macOS removing the item itself (⌘-drag off the bar).
         MenuBarExtra(isInserted: Binding(
@@ -44,25 +45,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var started = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Single instance: a second launch just surfaces the one already running.
-        let running = NSRunningApplication.runningApplications(
-            withBundleIdentifier: Bundle.main.bundleIdentifier ?? "com.itsallexb.TVControlForMac")
-        if running.count > 1 {
-            running.first { $0 != .current }?.activate()
-            NSApp.terminate(nil)
-            return
+        // An instance pointed at its own data folder is a separate app as far as this
+        // goes: it runs next to the normal one and leaves an old LGforMac alone.
+        if !AppPaths.isTrialRun {
+            // Single instance: a second launch just surfaces the one already running.
+            let running = NSRunningApplication.runningApplications(
+                withBundleIdentifier: Bundle.main.bundleIdentifier ?? AppInfo.bundleIdentifier)
+            if running.count > 1 {
+                running.first { $0 != .current }?.activate()
+                NSApp.terminate(nil)
+                return
+            }
+            quitLegacyApp()
         }
 
+        let arguments = CommandLine.arguments
+        let afterUpdate = arguments.contains(AppInfo.updatedArg)
+
         let state = AppState.shared
-        state.start()
+        if let page = Self.requestedPage(arguments) { state.page = page }
+        state.start(afterUpdate: afterUpdate)
         started = true
 
-        // Manual launches always open the window; the launch-behavior preference applies
-        // only to the at-login autostart launch (tagged with --autostart by the agent).
+        // Opening the app yourself always shows the window; the launch preference applies
+        // only to the at-login launch.
         let behavior = AutostartService.isAutostartLaunch ? state.settings.launchBehavior : 0
         switch behavior {
         case 2:
-            break // in the background — stays an accessory (no window, no Dock icon)
+            break // in the background: stays an accessory (no window, no Dock icon)
         case 1:
             showMainWindow(activate: false)
             windowController?.window?.miniaturize(nil)
@@ -71,7 +81,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // Closing the window keeps the app alive in the menu bar (parity with hide-to-tray).
+    // The app was called LGforMac up to v1.0, with its own bundle id, so macOS sees that
+    // as a different app. Two copies would both grab the hotkeys and both drive the TVs,
+    // so one that's still running is asked to quit; this version carries its settings over.
+    private func quitLegacyApp() {
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: AppInfo.legacyBundleIdentifier) {
+            Log.write("startup: asking the old LGforMac (pid \(app.processIdentifier)) to quit")
+            app.terminate()
+        }
+    }
+
+    // `--page schedule` opens straight on a page (home, schedule, power, hotkeys, osd, settings).
+    private static func requestedPage(_ arguments: [String]) -> AppPage? {
+        guard let flag = arguments.firstIndex(of: "--page"), arguments.indices.contains(flag + 1) else { return nil }
+        return AppPage(rawValue: arguments[flag + 1].lowercased())
+    }
+
+    // Closing the window keeps the app alive in the menu bar.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
     }
@@ -85,6 +111,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         guard started else { return }
         AppState.shared.shutdown()
+    }
+
+    /// True while the main window is on screen (not closed to the menu bar).
+    var isMainWindowVisible: Bool {
+        windowController?.window?.isVisible ?? false
+    }
+
+    /// The window is titled after the page it shows, like System Settings.
+    func setWindowTitle(_ title: String) {
+        windowController?.window?.title = title
     }
 
     func showMainWindow(activate: Bool = true) {
@@ -106,29 +142,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// The main settings window: an AppKit window hosting the SwiftUI MainView, so launch
-/// behavior (hidden / minimized), close-to-menu-bar and show-from-menu-bar stay fully
-/// under our control.
+/// The main window: an AppKit window hosting the SwiftUI MainView, so launch behavior
+/// (hidden / minimized), close-to-menu-bar and show-from-menu-bar stay fully under our
+/// control.
 @MainActor
 final class MainWindowController: NSWindowController, NSWindowDelegate {
     convenience init() {
         let hosting = NSHostingController(rootView: MainView())
+        // Lets the pages put their title and buttons in the window's toolbar.
+        hosting.sceneBridgingOptions = [.toolbars]
         let window = NSWindow(contentViewController: hosting)
-        window.title = "TVControlForMac"
-        window.setContentSize(NSSize(width: 900, height: 640))
+        window.title = AppState.shared.page.title
+        window.setContentSize(NSSize(width: 860, height: 620))
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         window.toolbarStyle = .unified
         window.titlebarSeparatorStyle = .automatic
-        window.contentMinSize = NSSize(width: 780, height: 520)
+        window.contentMinSize = NSSize(width: 760, height: 500)
         window.setFrameAutosaveName("TVControlForMacMain")
         window.isReleasedWhenClosed = false
         self.init(window: window)
         window.delegate = self
     }
 
-    // Close hides to the background instead of quitting (parity with TVControlForWin's tray
-    // icon), and drops the Dock icon — a closed TVControlForMac is a plain menu bar app.
-    // Relaunching the app (or clicking the menu bar icon's "Open TVControlForMac") reopens it.
+    // Close hides to the background instead of quitting, and drops the Dock icon: a
+    // closed TVControlForMac is a plain menu bar app. Opening the app again (or the menu
+    // bar icon's "Open") brings the window back.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
         NSApp.setActivationPolicy(.accessory)

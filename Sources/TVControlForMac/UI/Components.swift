@@ -1,8 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import SwiftUI
 
-// The pages' building blocks. Every page is a title and short rows; anything that needs
-// more than a few words of explanation goes behind an InfoTip instead of onto the page.
+// The pages' building blocks. Every page is a grouped form, like a pane in System
+// Settings: short rows with the control on the trailing edge. Anything that needs more
+// than a few words of explanation goes behind an InfoTip instead of onto the page.
+
+/// A page of the main window: a grouped form with the page's name in the title bar.
+struct SettingsPage<Content: View>: View {
+    private let title: String
+    private let content: Content
+
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        Form {
+            content
+        }
+        .formStyle(.grouped)
+        .frame(maxWidth: 720)
+        .frame(maxWidth: .infinity)
+        .navigationTitle(title)
+    }
+}
 
 /// A small "i" button that shows a longer explanation in a popover.
 struct InfoTip: View {
@@ -33,8 +55,7 @@ struct InfoTip: View {
     }
 }
 
-/// A titled group of rows drawn as one rounded card with hairlines between the rows,
-/// like a section in System Settings. The title and its InfoTip are optional.
+/// A group of rows in a page, with an optional heading and InfoTip.
 struct SettingsGroup<Content: View>: View {
     private let title: String?
     private let info: String?
@@ -47,109 +68,101 @@ struct SettingsGroup<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        Section {
+            content
+        } header: {
             if let title {
-                HStack(spacing: 6) {
-                    Text(title).font(.headline)
+                HStack(spacing: 5) {
+                    Text(title)
                     if let info { InfoTip(info) }
                 }
-                .padding(.leading, 2)
-            }
-            _VariadicView.Tree(DividedRows()) { content }
-                .background {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(.quaternary.opacity(0.45))
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(.quaternary, lineWidth: 1)
-                }
-        }
-    }
-}
-
-// Lays the group's rows out in a column with a hairline between each pair.
-private struct DividedRows: _VariadicView_MultiViewRoot {
-    func body(children: _VariadicView.Children) -> some View {
-        let last = children.last?.id
-        VStack(spacing: 0) {
-            ForEach(children) { child in
-                child
-                if child.id != last {
-                    Divider().padding(.leading, 14)
-                }
             }
         }
     }
 }
 
-/// One row in a `SettingsGroup`: an optional icon, a short title (with an optional second
-/// line and InfoTip), and the control on the trailing edge.
-struct SettingRow<Control: View>: View {
-    private let icon: String?
-    private let title: String
-    private let subtitle: String?
-    private let info: String?
-    private let control: Control
+/// A row's label: a short title, with an optional second line and InfoTip.
+struct RowLabel: View {
+    let title: String
+    var subtitle: String?
+    var info: String?
 
-    init(_ title: String, icon: String? = nil, subtitle: String? = nil, info: String? = nil,
-         @ViewBuilder control: () -> Control) {
-        self.icon = icon
+    init(_ title: String, subtitle: String? = nil, info: String? = nil) {
         self.title = title
         self.subtitle = subtitle
         self.info = info
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                Text(title)
+                if let info { InfoTip(info) }
+            }
+            if let subtitle {
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// One row in a `SettingsGroup`: a label and the control on the trailing edge.
+struct SettingRow<Control: View>: View {
+    private let label: RowLabel
+    private let control: Control
+
+    init(_ title: String, subtitle: String? = nil, info: String? = nil,
+         @ViewBuilder control: () -> Control) {
+        self.label = RowLabel(title, subtitle: subtitle, info: info)
         self.control = control()
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            if let icon {
-                Image(systemName: icon)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(title)
-                    if let info { InfoTip(info) }
-                }
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer(minLength: 12)
+        LabeledContent {
             control
+        } label: {
+            label
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(minHeight: 44)
     }
 }
 
-/// A `SettingRow` whose control is a switch.
+/// A row whose control is a switch.
 struct ToggleRow: View {
-    let title: String
-    var icon: String?
-    var subtitle: String?
-    var info: String?
-    @Binding var isOn: Bool
+    private let label: RowLabel
+    @Binding private var isOn: Bool
 
-    init(_ title: String, icon: String? = nil, subtitle: String? = nil, info: String? = nil,
-         isOn: Binding<Bool>) {
-        self.title = title
-        self.icon = icon
-        self.subtitle = subtitle
-        self.info = info
+    init(_ title: String, subtitle: String? = nil, info: String? = nil, isOn: Binding<Bool>) {
+        self.label = RowLabel(title, subtitle: subtitle, info: info)
         self._isOn = isOn
     }
 
     var body: some View {
-        SettingRow(title, icon: icon, subtitle: subtitle, info: info) {
-            Toggle(title, isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
+        Toggle(isOn: $isOn) {
+            label
+        }
+    }
+}
+
+/// A row whose control is a pop-up menu of tagged choices.
+struct PickerRow<Value: Hashable, Options: View>: View {
+    private let label: RowLabel
+    @Binding private var selection: Value
+    private let options: Options
+
+    init(_ title: String, subtitle: String? = nil, info: String? = nil,
+         selection: Binding<Value>, @ViewBuilder options: () -> Options) {
+        self.label = RowLabel(title, subtitle: subtitle, info: info)
+        self._selection = selection
+        self.options = options()
+    }
+
+    var body: some View {
+        Picker(selection: $selection) {
+            options
+        } label: {
+            label
         }
     }
 }

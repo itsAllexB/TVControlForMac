@@ -1,53 +1,37 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Schedules
+// MARK: - Schedule
 
-/// Up to 10 daily brightness rules, applied to all TVs, with sleep/startup catch-up.
-struct SchedulesView: View {
+/// Up to 10 daily brightness rules, each for all TVs or chosen ones.
+struct ScheduleView: View {
     @Bindable private var state = AppState.shared
 
     var body: some View {
-        PageScaffold(
-            title: "Schedules",
-            subtitle: "Daily rules that set every TV's OLED Light at a time of day. Rules missed while the Mac was asleep are applied when it wakes; TVs that were off get the value the moment they're back."
-        ) {
-            GroupBox {
-                Toggle(isOn: $state.applyScheduleOnStartup) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Apply the current schedule at startup")
-                        Text("On launch, set each TV to the most recent schedule that has already passed.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+        SettingsPage("Schedule") {
+            SettingsGroup {
+                ToggleRow("Apply current schedule at startup",
+                          info: "When the app starts, each TV is set to the schedule in effect at that moment. That covers schedules that ran while the Mac was off.",
+                          isOn: $state.applyScheduleOnStartup)
+            }
+
+            SettingsGroup("Schedules") {
+                if state.settings.schedules.isEmpty {
+                    Text("No schedules yet")
+                        .foregroundStyle(.secondary)
                 }
-                .padding(6)
-            }
-
-            if state.settings.schedules.isEmpty {
-                Text("No schedules yet.")
-                    .foregroundStyle(.secondary)
-            }
-
-            ForEach($state.settings.schedules) { $schedule in
-                ScheduleRow(schedule: $schedule) {
-                    state.removeSchedule(schedule)
-                } onChange: {
-                    state.persistSchedules()
+                ForEach($state.settings.schedules) { $schedule in
+                    ScheduleRow(schedule: $schedule)
                 }
-            }
-
-            Button {
-                state.addSchedule()
-            } label: {
-                Label("Add schedule", systemImage: "plus")
-            }
-            .disabled(state.settings.schedules.count >= 10)
-
-            if state.settings.schedules.count >= 10 {
-                Text("Up to 10 schedules are allowed.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Button {
+                    state.addSchedule()
+                } label: {
+                    Label("Add Schedule", systemImage: "plus")
+                }
+                .buttonStyle(.borderless)
+                .disabled(!state.canAddSchedule)
+                .help(state.canAddSchedule ? "" : "Up to 10 schedules")
             }
         }
     }
@@ -55,43 +39,74 @@ struct SchedulesView: View {
 
 private struct ScheduleRow: View {
     @Binding var schedule: BrightnessSchedule
-    let onDelete: () -> Void
-    let onChange: () -> Void
+    private var state: AppState { AppState.shared }
 
     var body: some View {
-        GroupBox {
-            HStack(spacing: 14) {
-                Toggle("", isOn: Binding(
-                    get: { schedule.enabled },
-                    set: { schedule.enabled = $0; onChange() }
-                ))
+        HStack(spacing: 12) {
+            Toggle("On", isOn: Binding(
+                get: { schedule.enabled },
+                set: { schedule.enabled = $0; state.persistSchedules() }
+            ))
+            .labelsHidden()
+            .controlSize(.small)
+
+            DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
                 .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
+                .fixedSize()
 
-                DatePicker("", selection: timeBinding, displayedComponents: .hourAndMinute)
-                    .labelsHidden()
-                    .fixedSize()
+            Slider(value: Binding(
+                get: { Double(schedule.brightness) },
+                set: { schedule.brightness = Int($0.rounded()); state.persistSchedules() }
+            ), in: 0...100)
+            .labelsHidden()
+            .accessibilityLabel("Brightness")
 
-                Image(systemName: "sun.max")
-                    .foregroundStyle(.secondary)
-                Slider(value: Binding(
-                    get: { Double(schedule.brightness) },
-                    set: { schedule.brightness = Int($0.rounded()); onChange() }
-                ), in: 0...100)
-                Text("\(schedule.brightness)%")
-                    .font(.callout.weight(.semibold))
-                    .monospacedDigit()
-                    .frame(width: 44, alignment: .trailing)
+            Text("\(schedule.brightness)%")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 42, alignment: .trailing)
 
-                Button(role: .destructive, action: onDelete) {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.borderless)
+            if state.showsTargetPicker(for: schedule) {
+                targetMenu
             }
-            .padding(6)
-            .opacity(schedule.enabled ? 1 : 0.55)
+
+            Button {
+                state.removeSchedule(schedule)
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .help("Remove schedule")
+            .accessibilityLabel("Remove schedule")
         }
+        .opacity(schedule.enabled ? 1 : 0.55)
+    }
+
+    // Which TVs this schedule changes: all of them, or the ticked ones. Only TVs whose
+    // brightness can be set right now are offered.
+    private var targetMenu: some View {
+        Menu {
+            Toggle("All TVs", isOn: Binding(
+                get: { schedule.tvIds.isEmpty },
+                set: { _ in toggleTarget(nil) }
+            ))
+            Divider()
+            ForEach(state.tvs.filter(\.supportsBrightness)) { tv in
+                Toggle(tv.name, isOn: Binding(
+                    get: { schedule.tvIds.contains(tv.id) },
+                    set: { _ in toggleTarget(tv.id) }
+                ))
+            }
+        } label: {
+            Text(RuleTargets.targetLabel(schedule.tvIds, tvs: state.tvInfos))
+        }
+        .fixedSize()
+        .help("TVs this schedule changes")
+    }
+
+    private func toggleTarget(_ tvId: String?) {
+        schedule.tvIds = RuleTargets.toggleTarget(schedule.tvIds, tvId: tvId)
+        state.persistSchedules()
     }
 
     private var timeBinding: Binding<Date> {
@@ -103,7 +118,7 @@ private struct ScheduleRow: View {
             set: { date in
                 schedule.hour = Calendar.current.component(.hour, from: date)
                 schedule.minute = Calendar.current.component(.minute, from: date)
-                onChange()
+                state.persistSchedules()
             }
         )
     }
@@ -111,152 +126,160 @@ private struct ScheduleRow: View {
 
 // MARK: - Power
 
-/// TV power automation: follow the Mac's startup, sleep, shutdown and display-sleep.
+/// TV power automation: follow the Mac's startup, sleep, shutdown and display sleep.
+/// One set of rules for all TVs, or separate rules for a TV.
 struct PowerView: View {
     @Bindable private var state = AppState.shared
+    /// Whose rules are shown: "" for all TVs, otherwise a TV's id.
+    @State private var scope = ""
+
+    private var scopeTv: TvState? { state.tv(withId: scope) }
+    private var editable: Bool { state.powerRulesEditable(scope: scope) }
 
     var body: some View {
-        PageScaffold(
-            title: "Power",
-            subtitle: "Turn the TVs on and off together with the Mac. All rules apply to every TV, and waking uses Wake-on-LAN."
-        ) {
-            GroupBox("Turn on") {
-                VStack(alignment: .leading, spacing: 10) {
-                    toggle("When TVControlForMac starts",
-                           "With launch-at-login enabled, that's when you sign in.",
-                           \.onAppStart)
-                    toggle("When the Mac wakes from sleep", nil, \.onResume)
-                    toggle("When the displays wake", nil, \.followDisplayOn)
-                }
-                .padding(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            GroupBox("Turn off") {
-                VStack(alignment: .leading, spacing: 10) {
-                    toggle("When the Mac goes to sleep", nil, \.offOnSleep)
-                    toggle("When the Mac shuts down, restarts or you log out", nil, \.offOnShutdown)
-                    toggle("When macOS puts the displays to sleep",
-                           "The idle display-sleep timer in System Settings → Lock Screen.",
-                           \.followDisplayOff)
-
-                    Picker("Display-sleep action", selection: Binding(
-                        get: { state.settings.power.displayOffAction },
-                        set: { state.settings.power.displayOffAction = $0; state.saveSettings() }
-                    )) {
-                        Text("Screen off — instant resume").tag(0)
-                        Text("Power off fully — wakes via Wake-on-LAN").tag(1)
+        SettingsPage("Power") {
+            if state.showsPowerScope {
+                SettingsGroup {
+                    PickerRow("Rules for", selection: $scope) {
+                        ForEach(state.powerScopes) { choice in
+                            Text(choice.name).tag(choice.id)
+                        }
                     }
-                    .pickerStyle(.radioGroup)
-                    .disabled(!state.settings.power.followDisplayOff)
-                    .padding(.leading, 20)
+                    if let tv = scopeTv {
+                        ToggleRow("Separate rules for this TV",
+                                  subtitle: "When off, it follows the rules for All TVs",
+                                  isOn: Binding(
+                                      get: { tv.ownPower != nil },
+                                      set: { state.setSeparatePowerRules($0, for: tv) }
+                                  ))
+                    }
                 }
-                .padding(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Text("For the turn-on rules, enable Quick Start+ on the TV (General → Devices → External Devices — wording varies); that's what lets it answer Wake-on-LAN. Note that once macOS sleeps a display it stops sending a picture, so the TV usually powers itself off on “no signal” a few minutes later even in screen-off mode; waking covers both cases.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Group {
+                SettingsGroup("Turn On", info: "LG: on the TV, turn on Quick Start+ and “Turn on via Wi-Fi”. They're under General > Devices, or General > External Devices on some models. Then let the app connect once while the TV is on.\n\nGoogle TV: on the TV, set Settings > System > Power & Energy > Energy Modes to “Increased (Always connected)”, so it stays reachable in standby.") {
+                    ToggleRow("When the app starts", subtitle: "At login, if Launch at login is on",
+                              isOn: rule(\.onAppStart))
+                    ToggleRow("When the Mac wakes", isOn: rule(\.onResume))
+                }
+
+                SettingsGroup("Turn Off") {
+                    ToggleRow("When the Mac sleeps", isOn: rule(\.offOnSleep))
+                    ToggleRow("When the Mac shuts down", subtitle: "Also on restart and log out",
+                              isOn: rule(\.offOnShutdown))
+                }
+
+                SettingsGroup("Display Sleep", info: "Screen off: the picture goes dark but the TV stays on, so it comes back instantly. Google TVs can't do this and turn off instead.\n\nTurn off: saves more power. The TV takes a few seconds to come back.\n\nMost LG TVs turn themselves off a few minutes after the picture stops, even with Screen off. Keep “Turn on via Wi-Fi” on so the app can wake them.") {
+                    ToggleRow("When the displays turn off", isOn: rule(\.followDisplayOff))
+                    PickerRow("What the TV does", selection: rule(\.displayOffAction)) {
+                        Text("Screen off").tag(0)
+                        Text("Turn off").tag(1)
+                    }
+                    .disabled(!state.powerRules(scope: scope).followDisplayOff)
+                    ToggleRow("When the displays turn back on", isOn: rule(\.followDisplayOn))
+                }
+            }
+            // A TV that follows the shared rules shows them without changing them.
+            .disabled(!editable)
+        }
+        .onChange(of: state.showsPowerScope) {
+            // With the chooser hidden there'd be no way back from one TV's view, e.g.
+            // after the other TV was removed: go back to the shared rules.
+            if !state.showsPowerScope { scope = "" }
+        }
+        .onChange(of: state.tvs.map(\.id)) {
+            if scopeTv == nil { scope = "" }
         }
     }
 
-    private func toggle(_ title: String, _ caption: String?,
-                        _ keyPath: WritableKeyPath<PowerSettings, Bool>) -> some View {
-        Toggle(isOn: Binding(
-            get: { state.settings.power[keyPath: keyPath] },
-            set: { state.settings.power[keyPath: keyPath] = $0; state.saveSettings() }
-        )) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                if let caption {
-                    Text(caption).font(.caption).foregroundStyle(.secondary)
-                }
+    private func rule<Value>(_ keyPath: WritableKeyPath<PowerSettings, Value>) -> Binding<Value> {
+        Binding(
+            get: { state.powerRules(scope: scope)[keyPath: keyPath] },
+            set: { newValue in
+                var rules = state.powerRules(scope: scope)
+                rules[keyPath: keyPath] = newValue
+                state.setPowerRules(rules, scope: scope)
             }
-        }
+        )
     }
 }
 
 // MARK: - Hotkeys
 
-/// Global brightness hotkeys: customizable modifier combo + step.
+/// Global brightness hotkeys: the modifier keys, the step, and which TV they change.
 struct HotkeysView: View {
     @Bindable private var state = AppState.shared
 
     var body: some View {
-        PageScaffold(
-            title: "Hotkeys",
-            subtitle: "Global shortcuts that nudge brightness on the TV whose screen the cursor is on. With a single TV they always target it — no pairing needed."
-        ) {
-            GroupBox("Modifier keys") {
-                VStack(alignment: .leading, spacing: 10) {
-                    Toggle("Control (⌃)", isOn: $state.hotkeyControl)
-                    Toggle("Option (⌥)", isOn: $state.hotkeyOption)
-                    Toggle("Shift (⇧)", isOn: $state.hotkeyShift)
-                    Toggle("Command (⌘)", isOn: $state.hotkeyCommand)
-                    Text("Combined with the ↑ / ↓ arrow keys. At least one modifier is always kept — bare arrows would be swallowed system-wide.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        SettingsPage("Hotkeys") {
+            SettingsGroup {
+                SettingRow("Shortcut",
+                           info: "Hold these keys and press the Up or Down arrow to change brightness. At least one key stays selected.") {
+                    HStack(spacing: 6) {
+                        modifier("⌃", "Control", $state.hotkeyControl)
+                        modifier("⌥", "Option", $state.hotkeyOption)
+                        modifier("⇧", "Shift", $state.hotkeyShift)
+                        modifier("⌘", "Command", $state.hotkeyCommand)
+                        Text("+  ↑ / ↓")
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                .padding(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
 
-            GroupBox {
-                LabeledContent("Current shortcut") {
-                    Text(state.hotkeyComboText)
-                        .font(.system(.body, design: .rounded).weight(.semibold))
-                }
-                .padding(6)
-            }
-
-            GroupBox("Step") {
-                HStack(spacing: 10) {
+                SettingRow("Brightness step") {
                     Slider(value: Binding(
                         get: { Double(state.hotkeyStep) },
                         set: { state.hotkeyStep = Int($0.rounded()) }
-                    ), in: 1...25, step: 1)
-                    Text("\(state.hotkeyStep) points")
+                    ), in: 1...25)
+                    .labelsHidden()
+                    .frame(width: 180)
+                    .accessibilityLabel("Brightness step")
+                    Text("\(state.hotkeyStep)")
                         .monospacedDigit()
-                        .frame(width: 70, alignment: .trailing)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, alignment: .trailing)
                 }
-                .padding(6)
+
+                if state.showsHotkeyTarget {
+                    PickerRow("Which TV",
+                              info: "“TV under the cursor” changes the TV on the display your pointer is on. Choose each TV's display on the Home page. On a display with no TV, nothing changes.",
+                              selection: $state.hotkeyTarget) {
+                        ForEach(state.hotkeyTargetChoices) { choice in
+                            Text(choice.name).tag(choice.id)
+                        }
+                    }
+                }
             }
         }
+    }
+
+    private func modifier(_ symbol: String, _ name: String, _ isOn: Binding<Bool>) -> some View {
+        Toggle(symbol, isOn: isOn)
+            .toggleStyle(.button)
+            .help(name)
+            .accessibilityLabel(name)
     }
 }
 
 // MARK: - On-screen display
 
-/// The brightness OSD overlay preferences.
+/// The brightness overlay's preferences.
 struct OsdSettingsView: View {
     @Bindable private var state = AppState.shared
 
     var body: some View {
-        PageScaffold(
-            title: "On-screen display",
-            subtitle: "A brief overlay that confirms the new brightness when you use the hotkeys."
-        ) {
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle("Show the on-screen display", isOn: Binding(
-                        get: { state.settings.osd.enabled },
-                        set: { state.settings.osd.enabled = $0; state.saveSettings() }
-                    ))
+        SettingsPage("On-Screen Display") {
+            SettingsGroup {
+                ToggleRow("Show on-screen display", isOn: osd(\.enabled))
+            }
 
-                    Picker("Style", selection: Binding(
-                        get: { state.settings.osd.style },
-                        set: { state.settings.osd.style = $0; state.saveSettings() }
-                    )) {
-                        Text("macOS — system pop-up under the menu bar").tag(0)
-                        Text("Windows — TVControlForWin-style pill").tag(1)
-                    }
-                    .pickerStyle(.radioGroup)
-
-                    Picker("Position", selection: Binding(
-                        get: { state.settings.osd.position },
-                        set: { state.settings.osd.position = $0; state.saveSettings() }
-                    )) {
+            SettingsGroup("Appearance") {
+                PickerRow("Style", selection: osd(\.style)) {
+                    Text("macOS").tag(0)
+                    Text("Windows").tag(1)
+                }
+                // The macOS style always sits below the menu bar, like the system's own.
+                if state.settings.osd.style == 1 {
+                    PickerRow("Position", selection: osd(\.position)) {
                         Text("Bottom centre").tag(0)
                         Text("Bottom left").tag(1)
                         Text("Bottom right").tag(2)
@@ -264,61 +287,54 @@ struct OsdSettingsView: View {
                         Text("Top left").tag(4)
                         Text("Top right").tag(5)
                     }
-                    .fixedSize()
-                    .disabled(state.settings.osd.style == 0)
-                    if state.settings.osd.style == 0 {
-                        Text("The macOS style always appears below the menu bar, like the system volume and brightness pop-ups. Position applies to the Windows style.")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    Picker("Screen", selection: Binding(
-                        get: { state.settings.osd.monitor },
-                        set: { state.settings.osd.monitor = $0; state.saveSettings() }
-                    )) {
-                        Text("Primary display").tag(0)
-                        Text("The adjusted TV's screen").tag(1)
-                        Text("Screen under the cursor").tag(2)
-                    }
-                    .fixedSize()
-
-                    HStack(spacing: 10) {
-                        Text("Duration")
-                        Slider(value: Binding(
-                            get: { state.settings.osd.timeoutSeconds },
-                            set: { state.settings.osd.timeoutSeconds = max(0.5, min(5.0, $0)); state.saveSettings() }
-                        ), in: 0.5...5.0, step: 0.1)
-                        Text(String(format: "%.1f s", state.settings.osd.timeoutSeconds))
-                            .monospacedDigit()
-                            .frame(width: 44, alignment: .trailing)
-                    }
-
-                    Toggle("Show the TV's name", isOn: Binding(
-                        get: { state.settings.osd.showTvName },
-                        set: { state.settings.osd.showTvName = $0; state.saveSettings() }
-                    ))
-
-                    Toggle("Also show when a schedule changes brightness", isOn: Binding(
-                        get: { state.settings.osd.showOnSchedule },
-                        set: { state.settings.osd.showOnSchedule = $0; state.saveSettings() }
-                    ))
                 }
-                .padding(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                PickerRow("Display",
+                          info: "“The TV being adjusted” uses the display chosen on each TV's card on the Home page.",
+                          selection: osd(\.monitor)) {
+                    Text("Main display").tag(0)
+                    Text("The TV being adjusted").tag(1)
+                    Text("Display under the pointer").tag(2)
+                }
+                SettingRow("Duration") {
+                    Slider(value: Binding(
+                        get: { state.settings.osd.timeoutSeconds },
+                        set: {
+                            // Tenths of a second, without tick marks crowding the slider.
+                            state.settings.osd.timeoutSeconds = max(0.5, min(5.0, ($0 * 10).rounded() / 10))
+                            state.saveSettings()
+                        }
+                    ), in: 0.5...5.0)
+                    .labelsHidden()
+                    .frame(width: 180)
+                    .accessibilityLabel("Duration")
+                    Text(String(format: "%.1f s", state.settings.osd.timeoutSeconds))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40, alignment: .trailing)
+                }
+                ToggleRow("Show TV name", isOn: osd(\.showTvName))
+                ToggleRow("Show when a schedule runs", isOn: osd(\.showOnSchedule))
             }
 
-            Button {
-                state.previewOsd()
-            } label: {
-                Label("Preview", systemImage: "eye")
+            SettingsGroup {
+                SettingRow("Preview") {
+                    Button("Show") { state.previewOsd() }
+                }
             }
         }
+    }
+
+    private func osd<Value>(_ keyPath: WritableKeyPath<OsdSettings, Value>) -> Binding<Value> {
+        Binding(
+            get: { state.settings.osd[keyPath: keyPath] },
+            set: { state.settings.osd[keyPath: keyPath] = $0; state.saveSettings() }
+        )
     }
 }
 
 // MARK: - Settings
 
-/// App preferences: theme, launch at login, launch behavior, backup import/export.
+/// App preferences: theme, menu bar, launch at login, backup, updates.
 struct SettingsView: View {
     @Bindable private var state = AppState.shared
     @State private var dialogMessage: DialogMessage?
@@ -330,82 +346,34 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        PageScaffold(
-            title: "Settings",
-            subtitle: "Appearance, startup and backups."
-        ) {
-            GroupBox("Appearance") {
-                Picker("Theme", selection: $state.themeIndex) {
-                    Text("System").tag(0)
+        SettingsPage("Settings") {
+            SettingsGroup("Appearance") {
+                PickerRow("Theme", selection: $state.themeIndex) {
+                    Text("Use system setting").tag(0)
                     Text("Light").tag(1)
                     Text("Dark").tag(2)
                 }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 320, alignment: .leading)
-                .padding(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                ToggleRow("Show menu bar icon",
+                          info: "Closing the window keeps the app running in the menu bar. With the icon hidden it keeps running in the background. Open the app again to get this window back.",
+                          isOn: $state.showMenuBarIcon)
             }
 
-            GroupBox("Menu bar") {
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle("Show the menu bar icon", isOn: Binding(
-                        get: { state.showMenuBarIcon },
-                        set: { on in
-                            state.showMenuBarIcon = on
-                            if !on {
-                                dialogMessage = DialogMessage(
-                                    title: "Menu bar icon hidden",
-                                    text: "TVControlForMac keeps running in the background. To open this window again, just launch TVControlForMac again — from Launchpad or Spotlight.")
-                            }
-                        }
-                    ))
-                    Text("Closing this window keeps the app running with no Dock icon — like any menu bar app. Without the icon, everything still works in the background; launch TVControlForMac again to reopen this window.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+            SettingsGroup("Startup") {
+                ToggleRow("Launch at login", isOn: $state.startAtLogin)
+                PickerRow("At login, show",
+                          info: "Opening the app yourself always shows the window.",
+                          selection: $state.launchBehavior) {
+                    Text("Window").tag(0)
+                    Text("Minimised").tag(1)
+                    Text("Nothing").tag(2)
                 }
-                .padding(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            GroupBox("Startup") {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle("Launch at login", isOn: $state.startAtLogin)
-                    Picker("When launched at login, open", selection: $state.launchBehavior) {
-                        Text("Normal window").tag(0)
-                        Text("Minimized").tag(1)
-                        Text("Nothing — run in the background").tag(2)
-                    }
-                    .fixedSize()
-                    Text(startupCaption)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+            SettingsGroup("Backup") {
+                SettingRow("Settings file", subtitle: "Includes TVs, pairing and schedules") {
+                    Button("Export…") { exportBackup() }
+                    Button("Import…") { importBackup() }
                 }
-                .padding(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            GroupBox("Backup") {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Button {
-                            exportBackup()
-                        } label: {
-                            Label("Export settings…", systemImage: "square.and.arrow.up")
-                        }
-                        Button {
-                            importBackup()
-                        } label: {
-                            Label("Import settings…", systemImage: "square.and.arrow.down")
-                        }
-                    }
-                    Text("One JSON file with your TVs (including pairing keys), schedules and preferences. TVControlForWin backups import too.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .alert(item: $dialogMessage) { message in
@@ -413,26 +381,16 @@ struct SettingsView: View {
         }
     }
 
-    // Spells out what the chosen launch combination actually does, so "run in the
-    // background" with the menu bar icon hidden reads as deliberate, not broken.
-    private var startupCaption: String {
-        let base = "Launching it yourself always opens the window."
-        guard state.launchBehavior == 2 else { return base }
-        return state.showMenuBarIcon
-            ? "At login it starts with no window and no Dock icon — reach it from its menu bar icon. " + base
-            : "At login it starts completely invisible (no window, no Dock icon, menu bar icon hidden) and automation runs in the background. " + base
-    }
-
     private func exportBackup() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "TVControlForMac-backup.json"
+        panel.nameFieldStringValue = "\(AppInfo.name)-backup.json"
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             do {
                 try state.exportSettings().write(to: url, atomically: true, encoding: .utf8)
             } catch {
-                dialogMessage = DialogMessage(title: "Export failed", text: error.localizedDescription)
+                dialogMessage = DialogMessage(title: "Couldn't export", text: error.localizedDescription)
             }
         }
     }
@@ -446,13 +404,9 @@ struct SettingsView: View {
             do {
                 let json = try String(contentsOf: url, encoding: .utf8)
                 try state.importSettings(json)
-                dialogMessage = DialogMessage(
-                    title: "Import complete",
-                    text: "Your TVs, schedules and preferences have been restored.")
             } catch {
-                dialogMessage = DialogMessage(
-                    title: "Import failed",
-                    text: "Couldn't import that file.\n\n\(error.localizedDescription)")
+                dialogMessage = DialogMessage(title: "Couldn't import",
+                                              text: "That file isn't a settings backup.")
             }
         }
     }

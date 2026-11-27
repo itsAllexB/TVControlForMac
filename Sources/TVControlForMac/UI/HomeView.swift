@@ -1,79 +1,58 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import SwiftUI
 
-/// The TVs page: add TVs (discovery or by IP), per-TV brightness, power, and the link
-/// between each TV and the physical display it drives. Linking targets the hotkeys and
-/// the OSD, and can pause automation while the display isn't connected to this Mac.
+/// The Home page: one group per TV (brightness, power, pairing, and the display it's
+/// linked to), with finding and adding TVs in the toolbar.
 struct HomeView: View {
     @Bindable private var state = AppState.shared
     @State private var showDiscover = false
     @State private var showAddByIp = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("TVs").font(.largeTitle.bold())
-                    Text("Drag a slider to set OLED Light. Link each TV to the display it drives — hotkeys and the OSD find it there, and automation can pause while it's unplugged.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-
-                if state.networkPermissionSuspected {
-                    NetworkPermissionBanner()
-                }
-
-                HStack(spacing: 8) {
-                    Button {
-                        showDiscover = true
-                    } label: {
-                        Label("Find TVs", systemImage: "magnifyingglass")
-                    }
-                    Button {
-                        showAddByIp = true
-                    } label: {
-                        Label("Add by IP", systemImage: "plus")
-                    }
-                    .popover(isPresented: $showAddByIp, arrowEdge: .bottom) {
-                        AddByIpForm()
-                    }
-                    Spacer()
-                    if state.screens.count > 1 {
-                        Button {
-                            DisplayIdentifier.flash()
-                        } label: {
-                            Label("Identify displays", systemImage: "display.2")
-                        }
-                        .help("Briefly shows each display's name on that display, so you can tell which is which when linking.")
-                    }
-                }
+        SettingsPage("Home") {
+            if state.networkPermissionSuspected {
+                NetworkPermissionNotice()
             }
-            .padding(24)
-            .padding(.bottom, state.tvs.isEmpty ? 0 : -12)
-            .frame(maxWidth: 720, alignment: .leading)
-
+            ForEach(state.tvs) { tv in
+                TvGroup(tv: tv)
+            }
+        }
+        .overlay {
             if state.tvs.isEmpty {
                 ContentUnavailableView {
-                    Label("No TVs yet", systemImage: "tv")
+                    Label("No TVs Yet", systemImage: "tv")
                 } description: {
-                    Text("Scan your network, or add one by IP address. Make sure “LG Connect Apps” is enabled on the TV (Settings → Network).")
+                    Text("Search your network, or add a TV by its IP address.")
                 } actions: {
                     Button("Find TVs") { showDiscover = true }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List {
-                    ForEach(state.tvs) { tv in
-                        TvCard(tv: tv)
-                            .frame(maxWidth: 672, alignment: .leading)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 6, leading: 24, bottom: 6, trailing: 24))
+            }
+        }
+        .toolbar {
+            ToolbarItemGroup {
+                if state.screens.count > 1 {
+                    Button {
+                        DisplayIdentifier.flash()
+                    } label: {
+                        Label("Identify Displays", systemImage: "display.2")
                     }
-                    .onMove { source, destination in
-                        state.moveTvs(from: source, to: destination)
-                    }
+                    .help("Show each display's name on that display")
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
+                Button {
+                    showAddByIp = true
+                } label: {
+                    Label("Add by IP Address", systemImage: "plus")
+                }
+                .help("Add a TV by its IP address")
+                .popover(isPresented: $showAddByIp, arrowEdge: .bottom) {
+                    AddByIpForm()
+                }
+                Button {
+                    showDiscover = true
+                } label: {
+                    Label("Find TVs", systemImage: "magnifyingglass")
+                }
+                .help("Search your network for TVs")
             }
         }
         .sheet(isPresented: $showDiscover) {
@@ -86,107 +65,110 @@ struct HomeView: View {
     }
 }
 
-/// Popover form for adding a TV by name + IP (replaces the always-visible field row).
+/// Popover form for adding a TV by its address. The brand is worked out from the ports
+/// the TV answers on, so there's nothing to pick.
 private struct AddByIpForm: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var host = ""
+    @State private var error = ""
+    @State private var adding = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Add a TV by IP address")
+            Text("Add a TV")
                 .font(.headline)
-            TextField("Name (e.g. Living Room C3)", text: $name)
+            TextField("IP address", text: $host)
                 .textFieldStyle(.roundedBorder)
-            TextField("IP address (e.g. 192.168.1.42)", text: $host)
+                .onChange(of: host) { error = "" } // typing a different address clears the message
+            TextField("Name (optional)", text: $name)
                 .textFieldStyle(.roundedBorder)
-            HStack {
-                Text("Shown on the TV under Network settings.")
+            if !error.isEmpty {
+                Text(error)
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                if adding { ProgressView().controlSize(.small) }
                 Spacer()
-                Button("Add TV") {
-                    AppState.shared.addTv(name: name, host: host)
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(host.trimmingCharacters(in: .whitespaces).isEmpty)
+                Button("Add TV") { add() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(adding || host.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(14)
-        .frame(width: 320)
+        .frame(width: 280)
+    }
+
+    private func add() {
+        adding = true
+        Task {
+            let problem = await AppState.shared.addTv(name: name, host: host)
+            adding = false
+            if let problem {
+                error = problem
+            } else {
+                dismiss()
+            }
+        }
     }
 }
 
-private struct TvCard: View {
+/// One TV: its name and state, brightness, and whatever it still needs (pairing,
+/// brightness setup, a display to be linked to).
+private struct TvGroup: View {
     @Bindable var tv: TvState
     @State private var confirmRemove = false
     private var state: AppState { AppState.shared }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        Section {
             header
-            brightnessRow
-            Divider()
-            linkRow
-            if tv.automationPaused {
-                pausedNotice
+            if tv.supportsBrightness {
+                brightnessRow
             }
-        }
-        .padding(14)
-        .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(.quaternary.opacity(0.45))
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 1)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            state.setActive(tv)
+            if tv.showsPairing {
+                pairingRow
+            }
+            if tv.showsBrightnessSetup {
+                brightnessSetupRow
+            }
+            displayRow
+            if !tv.linkedScreenId.isEmpty {
+                ToggleRow("Automate only while connected",
+                          subtitle: tv.automationPaused ? "Paused, the display isn't connected" : nil,
+                          info: "Schedules, power rules and hotkeys leave this TV alone while its display isn't connected to this Mac, for example when a MacBook is away from the desk. The controls on this page always work.",
+                          isOn: $tv.automationGate)
+            }
         }
         .confirmationDialog("Remove “\(tv.name)”?", isPresented: $confirmRemove) {
             Button("Remove TV", role: .destructive) {
                 state.removeTv(tv)
             }
         } message: {
-            Text("Its pairing key is deleted too — adding it back will show the accept prompt on the TV again.")
+            Text("Its pairing is removed too.")
         }
     }
 
     private var header: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(tv.isConnected ? AnyShapeStyle(.tint) : AnyShapeStyle(.gray.opacity(0.55)))
-                .frame(width: 38, height: 38)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(tv.isConnected ? AnyShapeStyle(.tint) : AnyShapeStyle(.gray.opacity(0.5)))
+                .frame(width: 34, height: 34)
                 .overlay {
                     Image(systemName: "tv")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.white)
                 }
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(tv.name)
-                        .font(.headline)
-                    if tv.isActive {
-                        Text("Active")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.tint.opacity(0.2), in: Capsule())
-                            .foregroundStyle(.tint)
-                    }
-                }
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(tv.isConnected ? Color.green : Color.gray.opacity(0.6))
-                        .frame(width: 7, height: 7)
-                    Text(tv.statusText)
-                    Text("·")
-                    Text(tv.host)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tv.name)
+                    .font(.headline)
+                Text(detailLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help(tv.statusHelp ?? "")
             }
 
             Spacer()
@@ -199,129 +181,130 @@ private struct TvCard: View {
             } label: {
                 Image(systemName: "power")
             }
-            .help("Turn the TV off when it's on, wake it when it's off")
+            .help("Turn on or off")
+            .accessibilityLabel("Turn on or off")
+
             Menu {
-                Button("Remove TV…", role: .destructive) {
-                    confirmRemove = true
-                }
+                Button("Move Up") { move(by: -1) }
+                    .disabled(state.tvs.first === tv)
+                Button("Move Down") { move(by: 1) }
+                    .disabled(state.tvs.last === tv)
+                Divider()
+                Button("Remove TV…", role: .destructive) { confirmRemove = true }
             } label: {
-                Image(systemName: "ellipsis.circle")
+                Image(systemName: "ellipsis")
             }
             .menuIndicator(.hidden)
             .fixedSize()
+            .accessibilityLabel("More")
         }
+    }
+
+    // "192.168.1.159 · LG webOS · Connected", plus " · Power only" for a TV whose
+    // brightness can't be controlled, so the missing slider doesn't look like a fault.
+    private var detailLine: String {
+        var parts = [tv.host, tv.kindLabel]
+        if tv.isPowerOnly { parts.append("Power only") }
+        parts.append(tv.statusText)
+        return parts.joined(separator: " · ")
+    }
+
+    private func move(by offset: Int) {
+        guard let index = state.tvs.firstIndex(where: { $0 === tv }) else { return }
+        let target = index + offset
+        guard state.tvs.indices.contains(target) else { return }
+        state.moveTvs(from: IndexSet(integer: index), to: offset > 0 ? target + 1 : target)
     }
 
     private var brightnessRow: some View {
         HStack(spacing: 10) {
-            Image(systemName: "sun.max")
+            Image(systemName: "sun.min")
                 .foregroundStyle(.secondary)
             Slider(value: Binding(
                 get: { Double(tv.backlight) },
                 set: { tv.backlight = Int($0.rounded()) }
             ), in: 0...100)
-            Text("\(tv.backlight)%")
-                .font(.callout.weight(.semibold))
-                .monospacedDigit()
-                .frame(width: 44, alignment: .trailing)
-        }
-    }
-
-    // The TV ↔ display link: which physical display this TV is, whether it's currently
-    // connected, and the per-TV automation gate.
-    private var linkRow: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "display")
-                .foregroundStyle(.secondary)
-
-            Picker("", selection: Binding(
-                get: { tv.linkedScreenId },
-                set: { state.linkDisplay(tv, screenId: $0) }
-            )) {
-                Text("No linked display").tag("")
-                if !tv.linkedScreenId.isEmpty,
-                   !state.screens.contains(where: { $0.id == tv.linkedScreenId }) {
-                    Text(tv.linkedScreenName.isEmpty
-                         ? "Previously linked display"
-                         : tv.linkedScreenName)
-                        .tag(tv.linkedScreenId)
-                }
-                ForEach(state.screens) { screen in
-                    Text(screen.name).tag(screen.id)
-                }
-            }
             .labelsHidden()
-            .fixedSize()
-            .help("The physical display this TV drives. Hotkeys target the TV when the cursor is on it, and the OSD can appear there.")
-
-            if !tv.linkedScreenId.isEmpty {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(tv.displayConnected ? Color.green : Color.orange)
-                        .frame(width: 6, height: 6)
-                    Text(tv.displayConnected ? "Connected" : "Not connected")
-                }
-                .font(.caption)
+            .accessibilityLabel("Brightness")
+            Image(systemName: "sun.max")
                 .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Toggle("Automate only while connected", isOn: $tv.automationGate)
-                .font(.caption)
-                .disabled(tv.linkedScreenId.isEmpty)
-                .help("Schedules, power rules and single-TV hotkeys skip this TV while its linked display isn't connected to this Mac — so nothing reaches the TV when the Mac isn't plugged into it. Manual controls always work.")
+            Text("\(tv.backlight)%")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 42, alignment: .trailing)
         }
     }
 
-    private var pausedNotice: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "pause.circle.fill")
-                .foregroundStyle(.orange)
-            Text("Automation paused — \(tv.linkedScreenName.isEmpty ? "its linked display" : tv.linkedScreenName) isn't connected. Manual controls still work.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    // Google TVs pair with a code the TV shows. While a code is awaited, the card's
+    // status line already says what to do (or what was wrong with the last one).
+    private var pairingRow: some View {
+        SettingRow("Pair with this TV",
+                   subtitle: tv.awaitingCode ? nil : "The TV will show a code to type here") {
+            if tv.awaitingCode {
+                TextField("Code", text: $tv.pairingCode)
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
+                    .frame(width: 90)
+                    .onSubmit { tv.advancePairing() }
+            }
+            Button(tv.awaitingCode ? "Confirm" : "Pair") {
+                tv.advancePairing()
+            }
         }
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    // Brightness on a Google TV goes over ADB, which the owner switches on once.
+    private var brightnessSetupRow: some View {
+        SettingRow("Brightness", subtitle: tv.brightnessSetupText, info: TvState.brightnessSetupHelp) {
+            if tv.brightnessSetupBusy {
+                ProgressView().controlSize(.small)
+            }
+            if let title = tv.brightnessSetupButtonText {
+                Button(title) { tv.setUpBrightness() }
+            }
+        }
+    }
+
+    // Which display this TV is: the hotkeys and the on-screen display find it there.
+    private var displayRow: some View {
+        PickerRow("Display",
+                  subtitle: !tv.linkedScreenId.isEmpty && !tv.displayConnected ? "Not connected" : nil,
+                  info: "Choose which display this TV is. The hotkeys then change the TV under your pointer, and the on-screen display shows on the right TV.",
+                  selection: Binding(
+                      get: { tv.linkedScreenId },
+                      set: { state.linkDisplay(tv, screenId: $0) }
+                  )) {
+            Text("None").tag("")
+            if !tv.linkedScreenId.isEmpty,
+               !state.screens.contains(where: { $0.id == tv.linkedScreenId }) {
+                Text(tv.linkedScreenName.isEmpty ? "Previous display" : tv.linkedScreenName)
+                    .tag(tv.linkedScreenId)
+            }
+            ForEach(state.screens) { screen in
+                Text(screen.name).tag(screen.id)
+            }
+        }
     }
 }
 
-/// Shown when TVs are repeatedly unreachable — on macOS the usual culprit is the Local
-/// Network permission being off (or never granted), so guide the user straight there.
-struct NetworkPermissionBanner: View {
+/// Shown when TVs are repeatedly unreachable. On macOS the usual culprit is the Local
+/// Network permission being off (or never granted), so point straight at it.
+private struct NetworkPermissionNotice: View {
     private let state = AppState.shared
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.yellow)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Can't reach your TVs")
-                    .font(.headline)
-                Text("If they're on, macOS may be blocking TVControlForMac's network access. Check Privacy & Security → Network (and Local Network) and enable TVControlForMac, or request the permission prompt again.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack {
-                    Button("Open Privacy Settings") {
-                        state.openLocalNetworkSettings()
-                    }
-                    Button("Request access") {
-                        state.requestLocalNetworkAccess()
-                    }
-                }
-                .controlSize(.small)
+        Section {
+            SettingRow("Can't reach your TVs",
+                       subtitle: "macOS may be blocking local network access",
+                       info: "If the TVs are on, check System Settings > Privacy & Security > Local Network and allow \(AppInfo.name). If it isn't listed there, select Ask Again and macOS will show its permission prompt.") {
+                Button("Ask Again") { state.requestLocalNetworkAccess() }
+                Button("Open Settings") { state.openLocalNetworkSettings() }
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.yellow.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
-/// The "Find TVs" sheet: live SSDP scan results with one-click add.
+/// The "Find TVs" sheet: live scan results with one-click add.
 struct DiscoverSheet: View {
     @Environment(\.dismiss) private var dismiss
     private let state = AppState.shared
@@ -329,26 +312,26 @@ struct DiscoverSheet: View {
     @State private var discovered: [DiscoveredTv] = []
     @State private var added: Set<String> = []
     @State private var scanning = false
-    @State private var statusText = "Searching for LG TVs…"
+    @State private var statusText = "Searching"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text("Find TVs").font(.title3.bold())
+                Spacer()
                 if scanning {
                     ProgressView().controlSize(.small)
                 }
+                Text(statusText)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
-
-            Text(statusText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
 
             List(discovered) { tv in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(tv.name).font(.system(size: 13, weight: .semibold))
-                        Text(tv.model.isEmpty || tv.model == tv.name ? tv.host : "\(tv.host)  ·  \(tv.model)")
+                        Text(tv.name).fontWeight(.medium)
+                        Text(details(for: tv))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -364,10 +347,17 @@ struct DiscoverSheet: View {
                 }
                 .padding(.vertical, 2)
             }
-            .frame(minHeight: 180)
+            .frame(minHeight: 190)
+            .overlay {
+                if discovered.isEmpty && !scanning {
+                    Text("Make sure the TV is on and on the same network")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             HStack {
-                Button("Scan again") {
+                Button("Search Again") {
                     Task { await scan() }
                 }
                 .disabled(scanning)
@@ -377,15 +367,23 @@ struct DiscoverSheet: View {
             }
         }
         .padding(16)
-        .frame(width: 440, height: 340)
+        .frame(width: 440, height: 350)
         .task { await scan() }
+    }
+
+    // "192.168.1.154 · Smart TV Pro · Google TV"
+    private func details(for tv: DiscoveredTv) -> String {
+        var parts = [tv.host]
+        if !tv.model.isEmpty && tv.model != tv.name { parts.append(tv.model) }
+        parts.append(tv.kind.label)
+        return parts.joined(separator: " · ")
     }
 
     private func scan() async {
         guard !scanning else { return }
         scanning = true
         discovered = []
-        statusText = "Searching for LG TVs…"
+        statusText = "Searching"
 
         let found = await SsdpDiscovery.findTvs { tv in
             if !discovered.contains(where: { $0.host == tv.host }) {
@@ -397,9 +395,9 @@ struct DiscoverSheet: View {
         }
 
         statusText = switch discovered.count {
-        case 0: "No TVs found. Check that the TV is on (not in standby) and connected to the same network."
-        case 1: "1 TV found."
-        case let n: "\(n) TVs found."
+        case 0: "No TVs found"
+        case 1: "1 TV found"
+        case let n: "\(n) TVs found"
         }
         scanning = false
     }
