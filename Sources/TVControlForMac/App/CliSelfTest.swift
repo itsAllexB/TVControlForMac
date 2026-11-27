@@ -227,6 +227,18 @@ enum SelfTestCli {
               (try? store.deserializeBackup(#"{ "Settings": { "HotkeyStep": 5 } }"#)) == nil)
         check("files: a devices-only file is refused",
               (try? store.deserializeBackup(#"{ "Devices": [] }"#)) == nil)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("tvcontrol-selftest-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let broken = folder.appendingPathComponent("devices.json")
+        try? Data(#"[{ "Name": "cut sh"#.utf8).write(to: broken)
+        DeviceStore.keepUnreadable(broken)
+        try? Data("second".utf8).write(to: broken)
+        DeviceStore.keepUnreadable(broken)
+        let copies = (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.filter { $0 != "devices.json" }
+        let kept = try? String(contentsOf: broken.appendingPathExtension("unreadable"), encoding: .utf8)
+        check("files: an unreadable file is kept as one .unreadable copy, the latest",
+              copies == ["devices.json.unreadable"] && kept == "second")
+        try? FileManager.default.removeItem(at: folder)
         check("files: a backup with no TVs in it still imports",
               (try? store.deserializeBackup(#"{ "Devices": [], "Settings": {} }"#))?.devices?.isEmpty == true)
     }
