@@ -515,7 +515,7 @@ final class AppState {
     /// dimmed. A TV picked earlier that can't be dimmed right now stays listed, so the
     /// choice still shows as made.
     var hotkeyTargetChoices: [TvChoice] {
-        [TvChoice(id: "", name: "TV under the cursor"), TvChoice(id: RuleTargets.allTvs, name: "All TVs")]
+        [TvChoice(id: "", name: "TV under the pointer"), TvChoice(id: RuleTargets.allTvs, name: "All TVs")]
             + tvs.filter { $0.supportsBrightness || $0.id == settings.hotkeyTarget }
                 .map { TvChoice(id: $0.id, name: $0.name) }
     }

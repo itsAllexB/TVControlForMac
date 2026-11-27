@@ -241,7 +241,7 @@ struct HotkeysView: View {
 
                 if state.showsHotkeyTarget {
                     PickerRow("Which TV",
-                              info: "“TV under the cursor” changes the TV on the display your pointer is on. Choose each TV's display on the Home page. On a display with no TV, nothing changes.",
+                              info: "“TV under the pointer” changes the TV on the display your pointer is on. Choose each TV's display on the Home page. On a display with no TV, nothing changes.",
                               selection: $state.hotkeyTarget) {
                         ForEach(state.hotkeyTargetChoices) { choice in
                             Text(choice.name).tag(choice.id)
