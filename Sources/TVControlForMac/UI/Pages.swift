@@ -88,7 +88,8 @@ private struct ScheduleRow: View {
     }
 
     // Which TVs this schedule changes: all of them, or the ticked ones. Only TVs whose
-    // brightness can be set right now are offered.
+    // brightness can be set right now are offered, and any already ticked: one that lost
+    // brightness control has to stay listed, or its tick could never be taken off.
     private var targetMenu: some View {
         Menu {
             Toggle("All TVs", isOn: Binding(
@@ -96,7 +97,7 @@ private struct ScheduleRow: View {
                 set: { _ in toggleTarget(nil) }
             ))
             Divider()
-            ForEach(state.tvs.filter(\.supportsBrightness)) { tv in
+            ForEach(state.tvs.filter { $0.supportsBrightness || schedule.tvIds.contains($0.id) }) { tv in
                 Toggle(tv.name, isOn: Binding(
                     get: { schedule.tvIds.contains(tv.id) },
                     set: { _ in toggleTarget(tv.id) }
@@ -218,7 +219,7 @@ struct HotkeysView: View {
     @Bindable private var state = AppState.shared
 
     var body: some View {
-        SettingsPage("Hotkeys") {
+        SettingsPage(AppPage.hotkeys.title) {
             SettingsGroup {
                 SettingRow("Shortcut",
                            info: "Hold these keys and press the Up or Down arrow to change brightness. At least one key stays selected.") {
