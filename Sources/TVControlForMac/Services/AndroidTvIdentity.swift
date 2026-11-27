@@ -64,6 +64,13 @@ enum AndroidTvIdentity {
         return (try credential(from: contents, privateKey: privateKey), Data(pfx).base64EncodedString())
     }
 
+    /// Whether a saved certificate can be read at all. Says nothing about whether this Mac
+    /// can build a TLS identity from it, or whether the TV still accepts it.
+    static func isReadable(_ base64Pfx: String) -> Bool {
+        guard let data = Data(base64Encoded: base64Pfx, options: .ignoreUnknownCharacters) else { return false }
+        return (try? Pkcs12.read(Array(data))) != nil
+    }
+
     /// Loads a certificate saved by `createClientCertificate`, or by TVControlForWin.
     static func loadClientCertificate(_ base64Pfx: String) throws -> AndroidTvCredential {
         guard let data = Data(base64Encoded: base64Pfx, options: .ignoreUnknownCharacters) else {

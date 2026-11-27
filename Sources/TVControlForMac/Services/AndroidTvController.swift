@@ -138,6 +138,16 @@ final class AndroidTvController: TvController {
                 }
 
                 setStatus(.connecting)
+                guard AndroidTvIdentity.isReadable(device.clientCertificate) else {
+                    // A saved certificate that can't even be read (a damaged file, a backup in
+                    // a form this app doesn't know) will never connect. Pairing again is the
+                    // only way forward, so offer that rather than "Reconnecting" for ever.
+                    Log.write("\(device.host): the saved certificate can't be read — pairing again is needed")
+                    gate.withLock { needsPairingMessage = "Needs pairing again" }
+                    device.clientCertificate = ""
+                    onDeviceChanged?()
+                    continue
+                }
                 let credential = try AndroidTvIdentity.loadClientCertificate(device.clientCertificate)
                 let client = AndroidTvRemoteClient()
                 client.onPowerChanged = { [weak self] on in self?.powerChanged(on) }

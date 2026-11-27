@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import Foundation
 
-/// Hidden command-line mode for diagnostics — exercises the exact production services
+/// Hidden command-line mode for diagnostics: exercises the exact production services
 /// without the UI. Not shown in any help; used for development and troubleshooting.
+/// The LG commands and `--osd-preview` are here; the rest live in `AtvCli` (Google TV),
+/// `AdbCli` (ADB brightness), `UpdateCli` (updates) and `SelfTestCli`.
+/// docs/development.md lists them all.
 ///
-///   TVControlForMac --scan                 SSDP-discover TVs on the LAN
-///   TVControlForMac --probe <host>         connect, pair (stored key if known), report state
-///   TVControlForMac --set <host> <0-100>   connect, pair, set OLED Light
+///   TVControlForMac --scan                 discover TVs on the LAN
+///   TVControlForMac --probe <host>         LG: connect, pair (stored key if known), report state
+///   TVControlForMac --set <host> <0-100>   LG: connect, pair, set OLED Light
 enum CliMode {
     static var isRequested: Bool {
         let args = CommandLine.arguments
