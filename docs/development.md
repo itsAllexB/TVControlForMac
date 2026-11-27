@@ -266,6 +266,13 @@ don't count). An update is only installed if:
   release is for, and a valid signature, made by the same signer as the running app when
   that app is signed with a certificate.
 
+What that adds up to: the download checks (name, address, size, hash) only protect the
+file on its way here. Whoever can publish a release on the repository decides what they
+say. The signer check is what protects a copy signed with a certificate: an update has to
+be signed with that same certificate, so a release from anyone without its key is refused.
+A copy signed ad hoc has no such check, because every ad-hoc build is a different signer;
+it trusts the GitHub repository and the connection to it, and nothing else.
+
 Only a copy that can replace itself installs: one in a folder the user can write to, not
 run from the disk image or from where it was downloaded (macOS runs such a copy from a
 read-only location). Others say there's a new version and open the release page. After
@@ -289,6 +296,12 @@ watch the old version come back. All are ignored unless `TVCONTROL_DATA_DIR` is 
    from `dist/`, named exactly as the build wrote them. The updater looks for the zip's
    name.
 
-Sign every release with the same certificate. Copies signed with it refuse an update
-signed by anyone else. To try the updater, rehearse it as above rather than publishing a
+The version has two or three parts (`3.1`, `3.0.1`); the updater doesn't read a fourth.
+`--package` checks the zip the way the updater will (`--update-verify`) and removes the
+release files again if a check fails. It refuses to package an ad-hoc signed build unless
+`ALLOW_ADHOC_RELEASE=1` is set.
+
+Sign every release with the same certificate, and keep a backup of its private key.
+Copies signed with it refuse an update signed by anyone else, so without the key they
+could never update themselves again. To try the updater, rehearse it as above rather than publishing a
 test release: every copy out there installs whatever the latest release is.
