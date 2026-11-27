@@ -49,13 +49,14 @@ enum AppInfo {
     /// True when this process was asked to start without its window.
     static var launchedInBackground: Bool { CommandLine.arguments.contains(backgroundArg) }
 
-    /// "v3.1.0", "3.1" or "3.1.0-beta" as a three-part version ("3.1.0"); nil if it isn't
-    /// one. Like System.Version on Windows: two to four numeric parts, the fourth dropped,
-    /// anything after "-" or "+" ignored.
+    /// "v3.1.0" or "3.1" as a three-part version ("3.1.0"); nil if it isn't one. Two to four
+    /// numeric parts, the fourth dropped. A tag with a pre-release or build suffix
+    /// ("3.1.0-beta", "3.1.0+2") isn't a version the updater installs, even on a release not
+    /// marked as a pre-release: read as 3.1.0, the beta would be offered as 3.1.0, and the
+    /// real 3.1.0 would then never be.
     static func parseVersion(_ tag: String?) -> String? {
         guard var text = tag?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
         while text.hasPrefix("v") || text.hasPrefix("V") { text.removeFirst() }
-        if let end = text.firstIndex(where: { $0 == "-" || $0 == "+" }) { text = String(text[..<end]) }
         let parts = text.split(separator: ".", omittingEmptySubsequences: false)
         guard (2...4).contains(parts.count) else { return nil }
         var numbers: [Int] = []
