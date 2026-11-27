@@ -37,6 +37,7 @@ final class AdbBrightness: @unchecked Sendable {
     private var refusals = 0           // writes in a row the TV has turned down
     private var resumeFailed = false   // the last quiet reconnect couldn't reach ADB
     private var macLookupDone = false  // asked the TV for its MAC once; don't keep asking
+    private var offeredKey: String?    // made for a setup the TV hasn't answered yet (never saved)
     private var debounceItem: DispatchWorkItem?
     private var pendingValue = 0
     private var hasPending = false
@@ -151,16 +152,22 @@ final class AdbBrightness: @unchecked Sendable {
         let current = state
         if current == .connecting || current == .awaitingApproval || current == .ready { return }
 
-        // Reuse a saved key (the TV may still trust it); otherwise make one, saved only on success.
+        // Reuse a saved key (the TV may still trust it); otherwise make one, saved only on
+        // success. A key that was offered and went unanswered is kept for the next try this
+        // session: if the owner selects Allow after we stopped waiting, the TV has approved
+        // that key, and a new one would only put the dialog up again.
         let key: String
-        if device.adbKey.isEmpty {
+        if !device.adbKey.isEmpty {
+            key = device.adbKey
+        } else if let offered = offeredKeyNow() {
+            key = offered
+        } else {
             do { key = try AdbClient.createKey() }
             catch {
                 Log.write("\(device.host): brightness setup failed: \(error.localizedDescription)")
                 return
             }
-        } else {
-            key = device.adbKey
+            setOfferedKey(key)
         }
 
         setState(.connecting)
@@ -171,6 +178,7 @@ final class AdbBrightness: @unchecked Sendable {
                     device.adbKey = key
                     deviceChanged()
                 }
+                setOfferedKey(nil)
                 try await probe()
             }
 
@@ -193,6 +201,16 @@ final class AdbBrightness: @unchecked Sendable {
             closeConnection()
             setState(unanswered ? .offered : .needsDebugging)
         }
+    }
+
+    private func offeredKeyNow() -> String? {
+        gate.lock(); defer { gate.unlock() }
+        return offeredKey
+    }
+
+    private func setOfferedKey(_ key: String?) {
+        gate.lock(); defer { gate.unlock() }
+        offeredKey = key
     }
 
     /// The TV went away (connection lost or standby): the ADB link is dead weight now.

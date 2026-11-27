@@ -11,16 +11,29 @@ enum CliMode {
     static var isRequested: Bool {
         let args = CommandLine.arguments
         guard args.count >= 2 else { return false }
-        return ["--scan", "--probe", "--set", "--mac", "--raw", "--osd-preview"].contains(args[1])
-            || AtvCli.commands.contains(args[1])
-            || AdbCli.commands.contains(args[1])
-            || UpdateCli.commands.contains(args[1])
-            || SelfTestCli.commands.contains(args[1])
+        // Any other "--flag" is CLI mode too (and gets told it's unknown): a mistyped
+        // diagnostics command must not start the whole app instead.
+        return args[1].hasPrefix("--") && !appFlags.contains(args[1])
+    }
+
+    /// Flags the app itself takes when it's launched normally.
+    private static let appFlags: Set<String> = ["--page", AppInfo.updatedArg]
+
+    private static func isKnown(_ flag: String) -> Bool {
+        ["--scan", "--probe", "--set", "--mac", "--raw", "--osd-preview"].contains(flag)
+            || AtvCli.commands.contains(flag)
+            || AdbCli.commands.contains(flag)
+            || UpdateCli.commands.contains(flag)
+            || SelfTestCli.commands.contains(flag)
     }
 
     static func runIfRequested() async -> Bool {
         let args = CommandLine.arguments
         guard args.count >= 2 else { return false }
+        guard isKnown(args[1]) else {
+            print("Unknown option \(args[1]).")
+            exit(2)
+        }
 
         let extra = Array(args.dropFirst())
         if AtvCli.commands.contains(args[1]) { await AtvCli.run(extra); return true }
